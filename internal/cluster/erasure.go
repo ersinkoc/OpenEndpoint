@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"sync"
 
@@ -47,7 +48,6 @@ func HighDurabilityConfig() ErasureConfig {
 type ErasureCoder struct {
 	config  ErasureConfig
 	enc     reedsolomon.Encoder
-	dec     reedsolomon.Decoder
 	logger  *zap.Logger
 	pool    *sync.Pool
 }
@@ -59,15 +59,9 @@ func NewErasureCoder(config ErasureConfig, logger *zap.Logger) (*ErasureCoder, e
 		return nil, fmt.Errorf("failed to create encoder: %w", err)
 	}
 
-	dec, err := reedsolomon.New(config.DataShards, config.ParityShards)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create decoder: %w", err)
-	}
-
 	c := &ErasureCoder{
 		config: config,
 		enc:    enc,
-		dec:    dec,
 		logger: logger,
 		pool: &sync.Pool{
 			New: func() interface{} {
@@ -147,7 +141,7 @@ func (c *ErasureCoder) Decode(shards [][]byte) ([]byte, error) {
 	copy(shardsCopy, shards)
 
 	// Decode
-	err := c.dec.ReconstructData(shardsCopy)
+	err := c.enc.ReconstructData(shardsCopy)
 	if err != nil {
 		return nil, fmt.Errorf("failed to reconstruct: %w", err)
 	}
@@ -183,7 +177,7 @@ func (c *ErasureCoder) Reconstruct(shards [][]byte) error {
 		return fmt.Errorf("not enough shards to reconstruct: have %d, need %d", available, c.config.DataShards)
 	}
 
-	err := c.dec.Reconstruct(shards)
+	err := c.enc.Reconstruct(shards)
 	if err != nil {
 		return fmt.Errorf("failed to reconstruct: %w", err)
 	}
@@ -197,7 +191,7 @@ func (c *ErasureCoder) Verify(shards [][]byte) (bool, error) {
 		return false, fmt.Errorf("expected %d shards, got %d", c.config.TotalShards, len(shards))
 	}
 
-	ok, err := c.dec.Verify(shards)
+	ok, err := c.enc.Verify(shards)
 	if err != nil {
 		return false, fmt.Errorf("failed to verify: %w", err)
 	}

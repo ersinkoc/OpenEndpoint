@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"fmt"
 	"hash/crc32"
 	"sort"
 	"sync"
@@ -263,7 +264,7 @@ func (r *HashRing) rebuild() {
 
 // getVirtualNodeKey generates the key for a virtual node
 func (r *HashRing) getVirtualNodeKey(nodeID string, virtualIndex int) string {
-	return r.hashFunction([]byte(nodeID)) + uint32(virtualIndex)
+	return fmt.Sprintf("%d-%d", r.hashFunction([]byte(nodeID)), virtualIndex)
 }
 
 // defaultHashFunction is the default hash function

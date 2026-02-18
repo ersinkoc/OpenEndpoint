@@ -29,15 +29,10 @@ func New(rootDir string) (*PebbleStore, error) {
 		Cache:           pebble.NewCache(256 << 20), // 256MB cache
 		MaxOpenFiles:   1000,
 		BytesPerSync:   512 << 10,
-		 WALBytesPerSync: 512 << 10,
-
-		// Compaction settings
-		CompactionTableSize:        64 << 20,
-		MaxConcurrentCompactions:  3,
+		WALBytesPerSync: 512 << 10,
 
 		// Memory settings
 		MemTableSize: 8 << 20,
-		MemTableStopWritesThreshold: 2,
 	}
 
 	db, err := pebble.Open(dbPath, opts)
@@ -98,7 +93,7 @@ func (p *PebbleStore) CreateBucket(ctx context.Context, bucket string) error {
 		return err
 	}
 
-	return p.db.Set(bucketKey(bucket), data)
+	return p.db.Set(bucketKey(bucket), data, pebble.Sync)
 }
 
 // DeleteBucket deletes a bucket
@@ -106,7 +101,7 @@ func (p *PebbleStore) DeleteBucket(ctx context.Context, bucket string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	return p.db.Delete(bucketKey(bucket))
+	return p.db.Delete(bucketKey(bucket), pebble.Sync)
 }
 
 // GetBucket gets bucket metadata
@@ -114,13 +109,14 @@ func (p *PebbleStore) GetBucket(ctx context.Context, bucket string) (*metadata.B
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
-	data, err := p.db.Get(bucketKey(bucket))
+	data, closer, err := p.db.Get(bucketKey(bucket))
 	if err != nil {
 		if err == pebble.ErrNotFound {
 			return nil, fmt.Errorf("bucket not found: %s", bucket)
 		}
 		return nil, err
 	}
+	defer closer.Close()
 
 	var meta metadata.BucketMetadata
 	if err := decodeMeta(data, &meta); err != nil {
@@ -135,7 +131,7 @@ func (p *PebbleStore) ListBuckets(ctx context.Context) ([]string, error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
-	iter, err := p.db.NewIter(nil, nil)
+	iter, err := p.db.NewIter(nil)
 	if err != nil {
 		return nil, err
 	}
@@ -168,7 +164,7 @@ func (p *PebbleStore) PutObject(ctx context.Context, bucket, key string, meta *m
 		keyStr += "?v=" + meta.VersionID
 	}
 
-	return p.db.Set(objectKey(bucket, key), data)
+	return p.db.Set(objectKey(bucket, key), data, pebble.Sync)
 }
 
 // GetObject gets object metadata
@@ -176,13 +172,14 @@ func (p *PebbleStore) GetObject(ctx context.Context, bucket, key string, version
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
-	data, err := p.db.Get(objectKey(bucket, key))
+	data, closer, err := p.db.Get(objectKey(bucket, key))
 	if err != nil {
 		if err == pebble.ErrNotFound {
 			return nil, fmt.Errorf("object not found: %s/%s", bucket, key)
 		}
 		return nil, err
 	}
+	defer closer.Close()
 
 	var meta metadata.ObjectMetadata
 	if err := decodeMeta(data, &meta); err != nil {
@@ -202,7 +199,7 @@ func (p *PebbleStore) DeleteObject(ctx context.Context, bucket, key string, vers
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	return p.db.Delete(objectKey(bucket, key))
+	return p.db.Delete(objectKey(bucket, key), pebble.Sync)
 }
 
 // ListObjects lists objects with optional prefix
@@ -212,7 +209,7 @@ func (p *PebbleStore) ListObjects(ctx context.Context, bucket, prefix string, op
 
 	prefixKey := "object:" + bucket + "/" + prefix
 
-	iter, err := p.db.NewIter(nil, nil)
+	iter, err := p.db.NewIter(nil)
 	if err != nil {
 		return nil, err
 	}
@@ -224,7 +221,7 @@ func (p *PebbleStore) ListObjects(ctx context.Context, bucket, prefix string, op
 		maxKeys = 1000
 	}
 
-	for iter.Seek([]byte(prefixKey)); iter.Valid() && len(objects) < maxKeys; iter.Next() {
+	for iter.SeekGE([]byte(prefixKey)); iter.Valid() && len(objects) < maxKeys; iter.Next() {
 		key := string(iter.Key())
 		if len(key) < 8 || key[:8] != "object:" {
 			break
@@ -236,6 +233,7 @@ func (p *PebbleStore) ListObjects(ctx context.Context, bucket, prefix string, op
 			continue
 		}
 		objKey := rest[len(bucket)+1:]
+		_ = objKey // Reserved for future use
 
 		var meta metadata.ObjectMetadata
 		if err := decodeMeta(iter.Value(), &meta); err != nil {
@@ -270,7 +268,7 @@ func (p *PebbleStore) CreateMultipartUpload(ctx context.Context, bucket, key, up
 		return err
 	}
 
-	return p.db.Set(multipartKey(bucket, key, uploadID), data)
+	return p.db.Set(multipartKey(bucket, key, uploadID), data, pebble.Sync)
 }
 
 // PutPart stores part metadata
@@ -284,7 +282,7 @@ func (p *PebbleStore) PutPart(ctx context.Context, bucket, key, uploadID string,
 	}
 
 	partKey := fmt.Sprintf("part:%s/%s/%s/%d", bucket, key, uploadID, partNumber)
-	return p.db.Set([]byte(partKey), data)
+	return p.db.Set([]byte(partKey), data, pebble.Sync)
 }
 
 // CompleteMultipartUpload completes a multipart upload
@@ -293,7 +291,7 @@ func (p *PebbleStore) CompleteMultipartUpload(ctx context.Context, bucket, key, 
 	defer p.mu.Unlock()
 
 	// Delete multipart upload metadata
-	err := p.db.Delete(multipartKey(bucket, key, uploadID))
+	err := p.db.Delete(multipartKey(bucket, key, uploadID), pebble.Sync)
 	if err != nil {
 		return err
 	}
@@ -301,7 +299,7 @@ func (p *PebbleStore) CompleteMultipartUpload(ctx context.Context, bucket, key, 
 	// Delete all parts
 	for i := 1; i <= len(parts); i++ {
 		partKey := fmt.Sprintf("part:%s/%s/%s/%d", bucket, key, uploadID, i)
-		p.db.Delete([]byte(partKey))
+		p.db.Delete([]byte(partKey), pebble.Sync)
 	}
 
 	return nil
@@ -312,7 +310,7 @@ func (p *PebbleStore) AbortMultipartUpload(ctx context.Context, bucket, key, upl
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	return p.db.Delete(multipartKey(bucket, key, uploadID))
+	return p.db.Delete(multipartKey(bucket, key, uploadID), pebble.Sync)
 }
 
 // ListParts lists parts of a multipart upload
@@ -322,14 +320,14 @@ func (p *PebbleStore) ListParts(ctx context.Context, bucket, key, uploadID strin
 
 	prefix := fmt.Sprintf("part:%s/%s/%s/", bucket, key, uploadID)
 
-	iter, err := p.db.NewIter(nil, nil)
+	iter, err := p.db.NewIter(nil)
 	if err != nil {
 		return nil, err
 	}
 	defer iter.Close()
 
 	var parts []metadata.PartMetadata
-	for iter.Seek([]byte(prefix)); iter.Valid(); iter.Next() {
+	for iter.SeekGE([]byte(prefix)); iter.Valid(); iter.Next() {
 		keyStr := string(iter.Key())
 		if len(keyStr) < len(prefix) || keyStr[:len(prefix)] != prefix {
 			break
@@ -353,14 +351,14 @@ func (p *PebbleStore) ListMultipartUploads(ctx context.Context, bucket, prefix s
 
 	prefixKey := "multipart:" + bucket + "/" + prefix
 
-	iter, err := p.db.NewIter(nil, nil)
+	iter, err := p.db.NewIter(nil)
 	if err != nil {
 		return nil, err
 	}
 	defer iter.Close()
 
 	var uploads []metadata.MultipartUploadMetadata
-	for iter.Seek([]byte(prefixKey)); iter.Valid(); iter.Next() {
+	for iter.SeekGE([]byte(prefixKey)); iter.Valid(); iter.Next() {
 		key := string(iter.Key())
 		if len(key) < 11 || key[:11] != "multipart:" {
 			break
@@ -403,7 +401,7 @@ func (p *PebbleStore) PutLifecycleRule(ctx context.Context, bucket string, rule 
 		return err
 	}
 
-	return p.db.Set(lifecycleKey(bucket), data)
+	return p.db.Set(lifecycleKey(bucket), data, pebble.Sync)
 }
 
 // GetLifecycleRules gets lifecycle rules for a bucket
@@ -411,13 +409,14 @@ func (p *PebbleStore) GetLifecycleRules(ctx context.Context, bucket string) ([]m
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
-	data, err := p.db.Get(lifecycleKey(bucket))
+	data, closer, err := p.db.Get(lifecycleKey(bucket))
 	if err != nil {
 		if err == pebble.ErrNotFound {
 			return nil, nil
 		}
 		return nil, err
 	}
+	defer closer.Close()
 
 	var rules []metadata.LifecycleRule
 	if err := decodeMeta(data, &rules); err != nil {
@@ -437,7 +436,7 @@ func (p *PebbleStore) PutBucketVersioning(ctx context.Context, bucket string, ve
 		return err
 	}
 
-	return p.db.Set(versioningKey(bucket), data)
+	return p.db.Set(versioningKey(bucket), data, pebble.Sync)
 }
 
 // GetBucketVersioning gets bucket versioning configuration
@@ -445,13 +444,14 @@ func (p *PebbleStore) GetBucketVersioning(ctx context.Context, bucket string) (*
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
-	data, err := p.db.Get(versioningKey(bucket))
+	data, closer, err := p.db.Get(versioningKey(bucket))
 	if err != nil {
 		if err == pebble.ErrNotFound {
 			return nil, nil
 		}
 		return nil, err
 	}
+	defer closer.Close()
 
 	var versioning metadata.BucketVersioning
 	if err := decodeMeta(data, &versioning); err != nil {
@@ -471,7 +471,7 @@ func (p *PebbleStore) PutReplicationConfig(ctx context.Context, bucket string, c
 		return err
 	}
 
-	return p.db.Set(replicationKey(bucket), data)
+	return p.db.Set(replicationKey(bucket), data, pebble.Sync)
 }
 
 // GetReplicationConfig gets replication configuration
@@ -479,13 +479,14 @@ func (p *PebbleStore) GetReplicationConfig(ctx context.Context, bucket string) (
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
-	data, err := p.db.Get(replicationKey(bucket))
+	data, closer, err := p.db.Get(replicationKey(bucket))
 	if err != nil {
 		if err == pebble.ErrNotFound {
 			return nil, nil
 		}
 		return nil, err
 	}
+	defer closer.Close()
 
 	var config metadata.ReplicationConfig
 	if err := decodeMeta(data, &config); err != nil {
@@ -500,7 +501,7 @@ func (p *PebbleStore) DeleteReplicationConfig(ctx context.Context, bucket string
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	return p.db.Delete(replicationKey(bucket))
+	return p.db.Delete(replicationKey(bucket), pebble.Sync)
 }
 
 // Close closes the store

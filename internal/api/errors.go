@@ -37,6 +37,12 @@ var (
 		statusCode: 400,
 	}
 
+	ErrMethodNotAllowed = &s3Error{
+		code:       "MethodNotAllowed",
+		message:    "The specified method is not allowed.",
+		statusCode: 405,
+	}
+
 	ErrNoSuchBucket = &s3Error{
 		code:       "NoSuchBucket",
 		message:    "The specified bucket does not exist.",

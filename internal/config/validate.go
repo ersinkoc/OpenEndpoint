@@ -159,57 +159,6 @@ func (c *Config) Save(path string) error {
 	return v.WriteConfig()
 }
 
-// Load loads configuration from a file
-func Load(path string) (*Config, error) {
-	cfg := &Config{}
-
-	// Set defaults
-	cfg.SetDefaults()
-
-	// Load from file if provided
-	if path != "" {
-		v := viper.New()
-		v.SetConfigFile(path)
-
-		if err := v.ReadInConfig(); err != nil {
-			return nil, fmt.Errorf("failed to read config file: %w", err)
-		}
-
-		if err := v.Unmarshal(cfg); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal config: %w", err)
-		}
-	} else {
-		// Try default locations
-		v := viper.New()
-		v.SetConfigName("openendpoint")
-		v.AddConfigPath(".")
-		v.AddConfigPath("$HOME/.config/openendpoint")
-		v.AddConfigPath("/etc/openendpoint")
-
-		v.SetEnvPrefix("OPENEP")
-		v.AutomaticEnv()
-
-		// Don't fail if no config found
-		v.ReadInConfig()
-
-		// Still try to unmarshal even if no config file
-		v.Unmarshal(cfg)
-	}
-
-	// Apply environment variables
-	applyEnvOverrides(cfg)
-
-	// Normalize
-	cfg.Normalize()
-
-	// Validate
-	if err := cfg.Validate(); err != nil {
-		return nil, err
-	}
-
-	return cfg, nil
-}
-
 // applyEnvOverrides applies environment variable overrides
 func applyEnvOverrides(cfg *Config) {
 	// Server

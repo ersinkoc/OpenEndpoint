@@ -5,6 +5,9 @@ import (
 	"io"
 )
 
+// Backend is an alias for StorageBackend
+type Backend = StorageBackend
+
 // StorageBackend defines the interface for object storage backends
 type StorageBackend interface {
 	// Put stores an object
@@ -33,6 +36,26 @@ type StorageBackend interface {
 
 	// Close closes the storage backend
 	Close() error
+}
+
+// PutResult contains the result of a Put operation
+type PutResult struct {
+	ETag         string
+	VersionID    string
+	StorageClass string
+}
+
+// GetResult contains the result of a Get operation
+type GetResult struct {
+	Body         io.ReadCloser
+	ObjectInfo   *ObjectInfo
+	Range        *Range
+	AcceptRanges string
+}
+
+// DeleteOptions contains options for Delete operation
+type DeleteOptions struct {
+	VersionID string
 }
 
 // PutOptions contains options for Put operation

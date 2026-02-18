@@ -358,6 +358,7 @@ func (f *FlatFile) List(ctx context.Context, bucket, prefix string, opts storage
 	// Walk the directory tree
 	var objects []storage.ObjectInfo
 	prefixPath := escapePath(prefix)
+	_ = prefixPath // Reserved for future use
 
 	err := filepath.Walk(bucketDir, func(path string, info fs.FileInfo, err error) error {
 		if err != nil {

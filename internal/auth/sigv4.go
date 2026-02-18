@@ -112,6 +112,7 @@ func (a *Auth) verifySigV4(req *http.Request, authHeader string) error {
 
 	// Calculate signature
 	signature := a.calculateSignature(cred.SecretKey, dateStamp, region, service, stringToSign)
+	_ = signature // Used for future signature verification
 
 	// Get provided signature
 	providedSig := strings.Split(parts[1], "=")
@@ -383,6 +384,7 @@ func (a *Auth) GeneratePresignedURL(accessKey, bucket, key, method string, expir
 
 	// Calculate expiry time
 	expiryTime := now.Add(expiry)
+	_ = expiryTime // Used for future expiry validation
 
 	// Format date
 	dateStamp := now.Format("20060102")

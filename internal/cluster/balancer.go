@@ -232,11 +232,10 @@ func (r *Rebalancer) executeMoves(ctx context.Context, moves []RebalanceOperatio
 			case <-r.stopCh:
 				return
 			case sem <- struct{}{}:
-				defer <-sem
+				// Execute the move
+				r.executeMove(ctx, &op)
+				<-sem
 			}
-
-			// Execute the move
-			r.executeMove(ctx, &op)
 		}(move)
 	}
 

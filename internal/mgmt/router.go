@@ -6,22 +6,24 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/openendpoint/openendpoint/internal/cluster"
 	"github.com/openendpoint/openendpoint/internal/engine"
-	"github.com/openendpoint/openendpoint/internal/telemetry"
 	"go.uber.org/zap"
 )
 
 // Router handles management API requests
 type Router struct {
-	engine *engine.ObjectService
-	logger *zap.SugaredLogger
+	engine        *engine.ObjectService
+	logger        *zap.SugaredLogger
+	clusterService *cluster.Cluster
 }
 
 // NewRouter creates a new management API router
-func NewRouter(engine *engine.ObjectService, logger *zap.SugaredLogger, config interface{}) *Router {
+func NewRouter(engine *engine.ObjectService, logger *zap.SugaredLogger, config interface{}, clusterSvc *cluster.Cluster) *Router {
 	return &Router{
-		engine: engine,
-		logger: logger,
+		engine:        engine,
+		logger:        logger,
+		clusterService: clusterSvc,
 	}
 }
 
@@ -61,6 +63,8 @@ func (r *Router) route(w http.ResponseWriter, req *http.Request, path string) {
 		r.handleMetrics(w, req)
 	case req.Method == http.MethodGet && path == "/version":
 		r.handleVersion(w, req)
+	case req.Method == http.MethodGet && path == "/cluster":
+		r.handleCluster(w, req)
 
 	default:
 		r.writeError(w, http.StatusNotFound, "Not Found")
@@ -180,6 +184,47 @@ func (r *Router) handleVersion(w http.ResponseWriter, req *http.Request) {
 	r.writeJSON(w, http.StatusOK, map[string]string{
 		"version": "0.1.0",
 		"build":   "dev",
+	})
+}
+
+// handleCluster returns cluster status
+func (r *Router) handleCluster(w http.ResponseWriter, req *http.Request) {
+	if r.clusterService == nil {
+		r.writeJSON(w, http.StatusOK, map[string]interface{}{
+			"enabled": false,
+			"nodes":   []interface{}{},
+		})
+		return
+	}
+
+	nodes := r.clusterService.GetNodes()
+	info := r.clusterService.GetClusterInfo()
+
+	// Convert nodes to dashboard format
+	nodeList := make([]map[string]interface{}, len(nodes))
+	for i, node := range nodes {
+		nodeList[i] = map[string]interface{}{
+			"id":               node.ID,
+			"name":             node.Name,
+			"address":          node.Address,
+			"port":             node.Port,
+			"status":           node.Status(),
+			"version":          node.Version,
+			"region":           node.Metadata.Region,
+			"zone":             node.Metadata.Zone,
+			"storageUsed":      node.Metadata.StorageUsed,
+			"storageCapacity":  node.Metadata.StorageCapacity,
+			"uptime":           time.Since(node.JoinTime).String(),
+		}
+	}
+
+	r.writeJSON(w, http.StatusOK, map[string]interface{}{
+		"enabled":            true,
+		"nodeID":             info.NodeID,
+		"replicationFactor":  info.ReplicationFactor,
+		"totalNodes":         len(nodes),
+		"nodes":              nodeList,
+		"ringDistribution":   r.clusterService.GetRingDistribution(),
 	})
 }
 

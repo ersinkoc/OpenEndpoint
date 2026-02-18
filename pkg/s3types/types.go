@@ -1,5 +1,7 @@
 package s3types
 
+import "encoding/xml"
+
 // Common S3 XML types
 
 // Error represents an S3 error response
@@ -173,28 +175,6 @@ type GetBucketLifecycleOutput struct {
 	XMLName string          `xml:"GetBucketLifecycleOutput"`
 	xmlns   string          `xml:"xmlns,attr"`
 	Rules   []LifecycleRule `xml:"Rule"`
-}
-
-// LifecycleRule represents a lifecycle rule
-type LifecycleRule struct {
-	ID        string           `xml:"ID"`
-	Prefix    string           `xml:"Prefix"`
-	Status    string           `xml:"Status"`
-	Transitions []Transition  `xml:"Transition,omitempty"`
-	Expiration *Expiration     `xml:"Expiration,omitempty"`
-}
-
-// Transition represents a storage class transition
-type Transition struct {
-	Date         string `xml:"Date,omitempty"`
-	Days         int    `xml:"Days,omitempty"`
-	StorageClass string `xml:"StorageClass"`
-}
-
-// Expiration represents object expiration
-type Expiration struct {
-	Date string `xml:"Date,omitempty"`
-	Days int    `xml:"Days,omitempty"`
 }
 
 // PutBucketLifecycleInput is the request for PutBucketLifecycle

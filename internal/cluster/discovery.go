@@ -38,6 +38,22 @@ type Node struct {
 	LastSeen  time.Time `json:"last_seen"`
 }
 
+// Status returns the node status as a string for dashboard display
+func (n *Node) Status() string {
+	switch n.State {
+	case NodeStateAlive:
+		return "online"
+	case NodeStateSuspect:
+		return "degraded"
+	case NodeStateDead:
+		return "offline"
+	case NodeStateLeft:
+		return "left"
+	default:
+		return "unknown"
+	}
+}
+
 // NodeMetadata contains additional node information
 type NodeMetadata struct {
 	StorageCapacity  int64   `json:"storage_capacity"`
@@ -66,11 +82,10 @@ var (
 		Name: "openendpoint_cluster_nodes_total",
 		Help: "Total number of nodes in the cluster",
 	})
-	clusterHealthGauge = promauto.NewGauge(prometheus.GaugeOpts{
+	clusterHealthGauge = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "openendpoint_cluster_node_health",
 		Help: "Health status of the current node (1=healthy, 0=unhealthy",
-		Labels: []string{"node_id"},
-	})
+	}, []string{"node_id"})
 	clusterMembersGauge = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "openendpoint_cluster_members",
 		Help: "Cluster members by state",
@@ -337,14 +352,14 @@ func (m *Manager) handleNodeEvent(event memberlist.NodeEvent) {
 	case memberlist.NodeJoin:
 		m.logger.Info("Node joined cluster",
 			zap.String("node", node.Name),
-			zap.String("addr", node.Address.String()))
+			zap.String("addr", node.Address()))
 
 		// Create node entry
 		newNode := &Node{
 			ID:        node.Name,
 			Name:      node.Name,
-			Address:   node.Address.String(),
-			Port:      node.Port,
+			Address:   node.Address(),
+			Port:      int(node.Port),
 			State:     NodeStateAlive,
 			Version:   "2.0.0",
 			JoinTime:  time.Now(),

@@ -236,8 +236,8 @@ func (s *ObjectService) GetObjectAttributes(ctx context.Context, bucket, key, ve
 
 	// Get parts if this is a multipart upload
 	var parts []metadata.PartMetadata
-	if meta.IsMultipart {
-		parts, err = s.metadata.ListParts(ctx, bucket, key, meta.UploadID)
+	if len(meta.Parts) > 0 {
+		parts, err = s.metadata.ListParts(ctx, bucket, key, "")
 		if err != nil {
 			parts = nil // Ignore error, parts are optional
 		}
@@ -284,13 +284,13 @@ func (s *ObjectService) SelectObjectContent(ctx context.Context, bucket, key, ex
 	}
 
 	// Get object
-	obj, err := s.metadata.GetObject(ctx, bucket, key, "")
+	_, err := s.metadata.GetObject(ctx, bucket, key, "")
 	if err != nil {
 		return nil, fmt.Errorf("object not found: %s/%s", bucket, key)
 	}
 
 	// Get the object data from storage
-	data, err := s.storage.Get(ctx, bucket, key)
+	data, err := s.storage.Get(ctx, bucket, key, storage.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to read object: %w", err)
 	}
@@ -540,7 +540,7 @@ func (s *ObjectService) CompleteMultipartUpload(ctx context.Context, bucket, key
 		VersionID:    uuid.New().String(),
 		IsLatest:    true,
 		LastModified: now,
-		Parts:        parts,
+		Parts:        convertToMetadataParts(parts),
 	}
 
 	// Save final object metadata
@@ -549,7 +549,7 @@ func (s *ObjectService) CompleteMultipartUpload(ctx context.Context, bucket, key
 	}
 
 	// Complete multipart upload (cleanup)
-	if err := s.metadata.CompleteMultipartUpload(ctx, bucket, key, uploadID, parts); err != nil {
+	if err := s.metadata.CompleteMultipartUpload(ctx, bucket, key, uploadID, convertToMetadataParts(parts)); err != nil {
 		s.logger.Warn("failed to cleanup multipart upload", zap.Error(err))
 	}
 
@@ -757,6 +757,7 @@ type UploadPartResult struct {
 type PartInfo struct {
 	PartNumber int    `json:"PartNumber"`
 	ETag       string `json:"ETag"`
+	Size       int64  `json:"Size"`
 }
 
 // Result from ListMultipartUploads
@@ -849,4 +850,17 @@ func parseInt(s string, defaultVal int) int {
 		return defaultVal
 	}
 	return i
+}
+
+// convertToMetadataParts converts engine PartInfo to metadata.PartInfo
+func convertToMetadataParts(parts []PartInfo) []metadata.PartInfo {
+	result := make([]metadata.PartInfo, len(parts))
+	for i, p := range parts {
+		result[i] = metadata.PartInfo{
+			PartNumber: p.PartNumber,
+			ETag:       p.ETag,
+			Size:       p.Size,
+		}
+	}
+	return result
 }

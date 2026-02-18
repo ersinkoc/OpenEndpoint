@@ -244,6 +244,11 @@ func (c *Cluster) GetClusterInfo() ClusterInfo {
 	}
 }
 
+// GetRingDistribution returns the hash ring distribution
+func (c *Cluster) GetRingDistribution() map[string]int {
+	return c.ring.GetNodeDistribution()
+}
+
 // ClusterInfo contains cluster information
 type ClusterInfo struct {
 	NodeID             string `json:"node_id"`

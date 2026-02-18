@@ -21,6 +21,7 @@ type Config struct {
 	Backup   BackupConfig   `mapstructure:"backup"`
 	Metrics  MetricsConfig  `mapstructure:"metrics"`
 	TLS      TLSConfig      `mapstructure:"tls"`
+	LogLevel string         `mapstructure:"log_level"`
 }
 
 type ServerConfig struct {
@@ -179,6 +180,8 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("tls.enabled", false)
 	v.SetDefault("tls.cert_file", "")
 	v.SetDefault("tls.key_file", "")
+
+	v.SetDefault("log_level", "info")
 
 	v.SetDefault("logging.level", "info")
 	v.SetDefault("logging.format", "json")
