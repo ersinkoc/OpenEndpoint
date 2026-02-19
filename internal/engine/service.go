@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -57,15 +58,16 @@ func (s *ObjectService) PutObject(ctx context.Context, bucket, key string, data 
 		return nil, fmt.Errorf("bucket not found: %s", bucket)
 	}
 
-	// Calculate size and hash
-	hasher := sha256.New()
-	size, err := io.Copy(hasher, data)
+	// Read all data into memory first (required for hash calculation and storage)
+	dataBytes, err := io.ReadAll(data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read data: %w", err)
 	}
 
-	// Reset reader
-	data.(io.Seeker).Seek(0, io.SeekStart)
+	// Calculate size and hash
+	hasher := sha256.New()
+	hasher.Write(dataBytes)
+	size := int64(len(dataBytes))
 
 	// Generate ETag
 	etag := fmt.Sprintf("\"%s\"", hex.EncodeToString(hasher.Sum(nil)))
@@ -80,7 +82,7 @@ func (s *ObjectService) PutObject(ctx context.Context, bucket, key string, data 
 	}
 
 	// Store the object
-	if err := s.storage.Put(ctx, bucket, key, data, size, storeOpts); err != nil {
+	if err := s.storage.Put(ctx, bucket, key, bytes.NewReader(dataBytes), size, storeOpts); err != nil {
 		return nil, fmt.Errorf("failed to store object: %w", err)
 	}
 
@@ -140,12 +142,11 @@ func (s *ObjectService) GetObject(ctx context.Context, bucket, key string, opts 
 		IfUnmodifiedSince: opts.IfUnmodifiedSince,
 	}
 
-	// Get the object
+	// Get the object - caller is responsible for closing
 	reader, err := s.storage.Get(ctx, bucket, key, storeOpts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get object: %w", err)
 	}
-	defer reader.Close()
 
 	return &GetObjectResult{
 		Body:         reader,
@@ -521,11 +522,28 @@ func (s *ObjectService) CompleteMultipartUpload(ctx context.Context, bucket, key
 		}
 	}
 
-	// Concatenate all parts
-	// For now, we'll create a new object by reading all parts
+	// Read all parts and concatenate into final object
 	var totalSize int64
+	var allData []byte
 	for _, p := range partMetas {
-		totalSize += p.Size
+		partKey := fmt.Sprintf("%s/%s/%s/%d", bucket, key, uploadID, p.PartNumber)
+		reader, err := s.storage.Get(ctx, bucket, partKey, storage.GetOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("failed to read part %d: %w", p.PartNumber, err)
+		}
+		data, err := io.ReadAll(reader)
+		reader.Close()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read part data: %w", err)
+		}
+		allData = append(allData, data...)
+		totalSize += int64(len(data))
+	}
+
+	// Write final object to storage
+	storeOpts := storage.PutOptions{}
+	if err := s.storage.Put(ctx, bucket, key, bytes.NewReader(allData), totalSize, storeOpts); err != nil {
+		return nil, fmt.Errorf("failed to write final object: %w", err)
 	}
 
 	// Create final object metadata
@@ -551,6 +569,12 @@ func (s *ObjectService) CompleteMultipartUpload(ctx context.Context, bucket, key
 	// Complete multipart upload (cleanup)
 	if err := s.metadata.CompleteMultipartUpload(ctx, bucket, key, uploadID, convertToMetadataParts(parts)); err != nil {
 		s.logger.Warn("failed to cleanup multipart upload", zap.Error(err))
+	}
+
+	// Clean up part files from storage
+	for _, p := range partMetas {
+		partKey := fmt.Sprintf("%s/%s/%s/%d", bucket, key, uploadID, p.PartNumber)
+		s.storage.Delete(ctx, bucket, partKey)
 	}
 
 	return &ObjectResult{

@@ -182,8 +182,8 @@ func (r *Router) handleMetrics(w http.ResponseWriter, req *http.Request) {
 // handleVersion returns version info
 func (r *Router) handleVersion(w http.ResponseWriter, req *http.Request) {
 	r.writeJSON(w, http.StatusOK, map[string]string{
-		"version": "0.1.0",
-		"build":   "dev",
+		"version": "1.0.0",
+		"build":   "release",
 	})
 }
 

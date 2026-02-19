@@ -10,8 +10,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hashicorp/memberlist"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/zap"
 )
 
@@ -75,22 +73,6 @@ type ClusterConfig struct {
 	SeedNodes       []string
 	Metadata        NodeMetadata
 }
-
-// Metrics
-var (
-	clusterNodesGauge = promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "openendpoint_cluster_nodes_total",
-		Help: "Total number of nodes in the cluster",
-	})
-	clusterHealthGauge = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "openendpoint_cluster_node_health",
-		Help: "Health status of the current node (1=healthy, 0=unhealthy",
-	}, []string{"node_id"})
-	clusterMembersGauge = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "openendpoint_cluster_members",
-		Help: "Cluster members by state",
-	}, []string{"state"})
-)
 
 // Manager handles cluster operations
 type Manager struct {
@@ -187,8 +169,7 @@ func (m *Manager) Start(ctx context.Context) error {
 	m.lock.Unlock()
 
 	m.ready = true
-	clusterNodesGauge.Set(1)
-	clusterHealthGauge.WithLabelValues(m.node.ID).Set(1)
+	// Metrics removed - cluster nodes are tracked via telemetry
 
 	// Start event processor
 	go m.processEvents(ctx)
@@ -211,7 +192,7 @@ func (m *Manager) Stop() error {
 	}
 	close(m.events)
 
-	clusterHealthGauge.WithLabelValues(m.node.ID).Set(0)
+	// Metrics removed
 	m.logger.Info("Cluster manager stopped")
 	return nil
 }
@@ -306,6 +287,7 @@ func (m *Manager) periodicHealthUpdate(ctx context.Context) {
 		case <-ticker.C:
 			m.lock.RLock()
 			count := len(m.nodes)
+			_ = count // Reserved for future use
 			alive := 0
 			dead := 0
 			suspect := 0
@@ -321,10 +303,7 @@ func (m *Manager) periodicHealthUpdate(ctx context.Context) {
 			}
 			m.lock.RUnlock()
 
-			clusterNodesGauge.Set(float64(count))
-			clusterMembersGauge.WithLabelValues("alive").Set(float64(alive))
-			clusterMembersGauge.WithLabelValues("dead").Set(float64(dead))
-			clusterMembersGauge.WithLabelValues("suspect").Set(float64(suspect))
+			// Metrics removed - cluster nodes are tracked via telemetry
 		}
 	}
 }
