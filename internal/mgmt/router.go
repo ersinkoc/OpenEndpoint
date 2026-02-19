@@ -68,6 +68,7 @@ func (r *Router) route(w http.ResponseWriter, req *http.Request, path string) {
 		r.handleVersion(w, req)
 	case req.Method == http.MethodGet && path == "/cluster":
 		r.handleCluster(w, req)
+	// NOTE: Specific routes must come BEFORE general /buckets/{bucket} routes
 	case req.Method == http.MethodGet && len(path) > 9 && path[:9] == "/buckets/" && strings.Contains(path[9:], "/objects"):
 		// /buckets/{bucket}/objects or /buckets/{bucket}/objects/{prefix}
 		parts := strings.SplitN(path[9:], "/objects", 2)
@@ -78,7 +79,7 @@ func (r *Router) route(w http.ResponseWriter, req *http.Request, path string) {
 		}
 		r.handleListObjects(w, req, bucket, prefix)
 	case req.Method == http.MethodDelete && len(path) > 9 && path[:9] == "/buckets/":
-		// /buckets/{bucket}/objects/{key}
+		// /buckets/{bucket}/objects/{key} - must check before general bucket delete
 		rest := path[9:]
 		parts := strings.SplitN(rest, "/objects/", 2)
 		if len(parts) == 2 {
@@ -94,6 +95,10 @@ func (r *Router) route(w http.ResponseWriter, req *http.Request, path string) {
 		bucket := parts[0]
 		r.handleUploadObject(w, req, bucket)
 		return
+	case req.Method == http.MethodGet && len(path) > 9 && path[:9] == "/buckets/":
+		// /buckets/{bucket} - general bucket info (must be after specific routes)
+		bucket := path[9:]
+		r.handleGetBucket(w, req, bucket)
 
 	default:
 		r.writeError(w, http.StatusNotFound, "Not Found")
@@ -222,7 +227,18 @@ func (r *Router) handleListObjects(w http.ResponseWriter, req *http.Request, buc
 		return
 	}
 
-	r.writeJSON(w, http.StatusOK, result)
+	// Convert to S3-style response for UI compatibility
+	response := map[string]interface{}{
+		"Contents":       result.Objects,
+		"CommonPrefixes": result.CommonPrefixes,
+		"Prefix":         result.Prefix,
+		"Delimiter":      result.Delimiter,
+		"MaxKeys":        result.MaxKeys,
+		"NextMarker":     result.NextMarker,
+		"IsTruncated":    result.IsTruncated,
+	}
+
+	r.writeJSON(w, http.StatusOK, response)
 }
 
 // handleDeleteObject deletes an object

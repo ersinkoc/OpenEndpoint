@@ -23,7 +23,7 @@ type StorageBackend interface {
 	Head(ctx context.Context, bucket, key string) (*ObjectInfo, error)
 
 	// List lists objects in a bucket with optional prefix
-	List(ctx context.Context, bucket, prefix string, opts ListOptions) ([]ObjectInfo, error)
+	List(ctx context.Context, bucket, prefix string, opts ListOptions) (*ListResult, error)
 
 	// CreateBucket creates a new bucket
 	CreateBucket(ctx context.Context, bucket string) error
@@ -101,6 +101,12 @@ type ObjectInfo struct {
 	StorageClass string
 	VersionID    string
 	IsDeleteMarker bool
+}
+
+// ListResult contains the result of a List operation
+type ListResult struct {
+	Objects       []ObjectInfo
+	CommonPrefixes []string
 }
 
 // BucketInfo contains metadata about a bucket

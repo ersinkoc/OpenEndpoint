@@ -338,15 +338,15 @@ func (s *ObjectService) ListObjects(ctx context.Context, bucket string, opts Lis
 	}
 
 	// List from storage
-	objects, err := s.storage.List(ctx, bucket, opts.Prefix, storeOpts)
+	result, err := s.storage.List(ctx, bucket, opts.Prefix, storeOpts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list objects: %w", err)
 	}
 
 	// Convert to results
-	var results []ObjectInfo
-	for _, obj := range objects {
-		results = append(results, ObjectInfo{
+	var objectInfos []ObjectInfo
+	for _, obj := range result.Objects {
+		objectInfos = append(objectInfos, ObjectInfo{
 			Key:          obj.Key,
 			Size:         obj.Size,
 			ETag:         obj.ETag,
@@ -356,17 +356,18 @@ func (s *ObjectService) ListObjects(ctx context.Context, bucket string, opts Lis
 
 	// Get next marker
 	var nextMarker string
-	if len(results) > 0 {
-		nextMarker = results[len(results)-1].Key
+	if len(objectInfos) > 0 {
+		nextMarker = objectInfos[len(objectInfos)-1].Key
 	}
 
 	return &ListObjectsResult{
-		Objects:    results,
-		Prefix:     opts.Prefix,
-		Delimiter:  opts.Delimiter,
-		MaxKeys:    opts.MaxKeys,
-		NextMarker: nextMarker,
-		IsTruncated: len(results) == opts.MaxKeys,
+		Objects:        objectInfos,
+		CommonPrefixes: result.CommonPrefixes,
+		Prefix:         opts.Prefix,
+		Delimiter:      opts.Delimiter,
+		MaxKeys:        opts.MaxKeys,
+		NextMarker:     nextMarker,
+		IsTruncated:    len(objectInfos) == opts.MaxKeys,
 	}, nil
 }
 
@@ -393,12 +394,12 @@ func (s *ObjectService) CreateBucket(ctx context.Context, bucket string) error {
 // DeleteBucket deletes a bucket
 func (s *ObjectService) DeleteBucket(ctx context.Context, bucket string) error {
 	// Check if bucket is empty
-	objects, err := s.storage.List(ctx, bucket, "", storage.ListOptions{MaxKeys: 1})
+	result, err := s.storage.List(ctx, bucket, "", storage.ListOptions{MaxKeys: 1})
 	if err != nil {
 		return fmt.Errorf("failed to list bucket: %w", err)
 	}
 
-	if len(objects) > 0 {
+	if len(result.Objects) > 0 {
 		return fmt.Errorf("bucket not empty: %s", bucket)
 	}
 
@@ -662,6 +663,61 @@ func (s *ObjectService) GetBucketVersioning(ctx context.Context, bucket string) 
 	return s.metadata.GetBucketVersioning(ctx, bucket)
 }
 
+// PutBucketLifecycle sets lifecycle configuration for a bucket
+func (s *ObjectService) PutBucketLifecycle(ctx context.Context, bucket string, rules []metadata.LifecycleRule) error {
+	// Delete existing rules and add new ones
+	for _, rule := range rules {
+		if err := s.metadata.PutLifecycleRule(ctx, bucket, &rule); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// GetBucketLifecycle gets lifecycle configuration for a bucket
+func (s *ObjectService) GetBucketLifecycle(ctx context.Context, bucket string) ([]metadata.LifecycleRule, error) {
+	return s.metadata.GetLifecycleRules(ctx, bucket)
+}
+
+// PutBucketCors sets CORS configuration for a bucket
+func (s *ObjectService) PutBucketCors(ctx context.Context, bucket string, cors *metadata.CORSConfiguration) error {
+	if cors == nil {
+		return fmt.Errorf("CORS configuration is required")
+	}
+	return s.metadata.PutBucketCors(ctx, bucket, cors)
+}
+
+// GetBucketCors gets CORS configuration for a bucket
+func (s *ObjectService) GetBucketCors(ctx context.Context, bucket string) (*metadata.CORSConfiguration, error) {
+	return s.metadata.GetBucketCors(ctx, bucket)
+}
+
+// PutBucketPolicy sets bucket policy
+func (s *ObjectService) PutBucketPolicy(ctx context.Context, bucket string, policy *string) error {
+	if policy == nil {
+		return fmt.Errorf("policy is required")
+	}
+	return s.metadata.PutBucketPolicy(ctx, bucket, policy)
+}
+
+// GetBucketPolicy gets bucket policy
+func (s *ObjectService) GetBucketPolicy(ctx context.Context, bucket string) (*string, error) {
+	return s.metadata.GetBucketPolicy(ctx, bucket)
+}
+
+// PutBucketEncryption sets bucket encryption
+func (s *ObjectService) PutBucketEncryption(ctx context.Context, bucket string, encryption *metadata.BucketEncryption) error {
+	if encryption == nil {
+		return fmt.Errorf("encryption is required")
+	}
+	return s.metadata.PutBucketEncryption(ctx, bucket, encryption)
+}
+
+// GetBucketEncryption gets bucket encryption
+func (s *ObjectService) GetBucketEncryption(ctx context.Context, bucket string) (*metadata.BucketEncryption, error) {
+	return s.metadata.GetBucketEncryption(ctx, bucket)
+}
+
 // PutReplicationConfig sets bucket replication configuration
 func (s *ObjectService) PutReplicationConfig(ctx context.Context, bucket string, config *metadata.ReplicationConfig) error {
 	// Validate config
@@ -679,6 +735,42 @@ func (s *ObjectService) GetReplicationConfig(ctx context.Context, bucket string)
 // DeleteReplicationConfig deletes bucket replication configuration
 func (s *ObjectService) DeleteReplicationConfig(ctx context.Context, bucket string) error {
 	return s.metadata.DeleteReplicationConfig(ctx, bucket)
+}
+
+// PutBucketTags sets bucket tags
+func (s *ObjectService) PutBucketTags(ctx context.Context, bucket string, tags map[string]string) error {
+	return s.metadata.PutBucketTags(ctx, bucket, tags)
+}
+
+// GetBucketTags gets bucket tags
+func (s *ObjectService) GetBucketTags(ctx context.Context, bucket string) (map[string]string, error) {
+	return s.metadata.GetBucketTags(ctx, bucket)
+}
+
+// PutObjectLock sets object lock configuration for a bucket
+func (s *ObjectService) PutObjectLock(ctx context.Context, bucket string, config *metadata.ObjectLockConfig) error {
+	if config == nil {
+		return fmt.Errorf("object lock configuration is required")
+	}
+	return s.metadata.PutObjectLock(ctx, bucket, config)
+}
+
+// GetObjectLock gets object lock configuration for a bucket
+func (s *ObjectService) GetObjectLock(ctx context.Context, bucket string) (*metadata.ObjectLockConfig, error) {
+	return s.metadata.GetObjectLock(ctx, bucket)
+}
+
+// PutPublicAccessBlock sets public access block configuration for a bucket
+func (s *ObjectService) PutPublicAccessBlock(ctx context.Context, bucket string, config *metadata.PublicAccessBlockConfiguration) error {
+	if config == nil {
+		return fmt.Errorf("public access block configuration is required")
+	}
+	return s.metadata.PutPublicAccessBlock(ctx, bucket, config)
+}
+
+// GetPublicAccessBlock gets public access block configuration for a bucket
+func (s *ObjectService) GetPublicAccessBlock(ctx context.Context, bucket string) (*metadata.PublicAccessBlockConfiguration, error) {
+	return s.metadata.GetPublicAccessBlock(ctx, bucket)
 }
 
 // Options for PutObject

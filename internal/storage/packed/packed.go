@@ -160,7 +160,7 @@ func (v *Volume) Write(key string, data []byte) (int64, error) {
 
 	// Write header
 	header := make([]byte, 24)
-	binary.LittleEndian.PutUint64(header[0:8], needle.Cookie)
+	binary.LittleEndian.PutUint64(header[0:8], uint64(needle.Cookie))
 	binary.LittleEndian.PutUint64(header[8:16], uint64(needle.Size))
 	binary.LittleEndian.PutUint64(header[16:24], uint64(needle.LastModified))
 
@@ -179,7 +179,7 @@ func (v *Volume) Write(key string, data []byte) (int64, error) {
 	}
 
 	// Update index
-	v.index.entries[needle.Cookie] = needle
+	v.index.entries[uint64(needle.Cookie)] = needle
 	v.size += int64(len(header) + len(data))
 
 	return offset, nil
@@ -191,7 +191,7 @@ func (v *Volume) Read(key string) ([]byte, error) {
 	defer v.mu.RUnlock()
 
 	cookie := crc32.ChecksumIEEE([]byte(key))
-	needle, ok := v.index.entries[cookie]
+	needle, ok := v.index.entries[uint64(cookie)]
 	if !ok {
 		return nil, fmt.Errorf("key not found: %s", key)
 	}
@@ -223,7 +223,7 @@ func (v *Volume) Delete(key string) error {
 	defer v.mu.Unlock()
 
 	cookie := crc32.ChecksumIEEE([]byte(key))
-	delete(v.index.entries, cookie)
+	delete(v.index.entries, uint64(cookie))
 	return nil
 }
 

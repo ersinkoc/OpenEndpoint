@@ -76,6 +76,36 @@ func replicationKey(bucket string) []byte {
 	return []byte("replication:" + bucket)
 }
 
+// corsKey generates a CORS key
+func corsKey(bucket string) []byte {
+	return []byte("cors:" + bucket)
+}
+
+// policyKey generates a policy key
+func policyKey(bucket string) []byte {
+	return []byte("policy:" + bucket)
+}
+
+// encryptionKey generates an encryption key
+func encryptionKey(bucket string) []byte {
+	return []byte("encryption:" + bucket)
+}
+
+// tagsKey generates a tags key
+func tagsKey(bucket string) []byte {
+	return []byte("tags:" + bucket)
+}
+
+// objectLockKey generates an object lock key
+func objectLockKey(bucket string) []byte {
+	return []byte("objectlock:" + bucket)
+}
+
+// publicAccessBlockKey generates a public access block key
+func publicAccessBlockKey(bucket string) []byte {
+	return []byte("publicaccessblock:" + bucket)
+}
+
 // CreateBucket creates a new bucket
 func (p *PebbleStore) CreateBucket(ctx context.Context, bucket string) error {
 	p.mu.Lock()
@@ -461,6 +491,106 @@ func (p *PebbleStore) GetBucketVersioning(ctx context.Context, bucket string) (*
 	return &versioning, nil
 }
 
+// PutBucketCors stores CORS configuration
+func (p *PebbleStore) PutBucketCors(ctx context.Context, bucket string, cors *metadata.CORSConfiguration) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	data, err := encodeMeta(cors)
+	if err != nil {
+		return err
+	}
+
+	return p.db.Set(corsKey(bucket), data, pebble.Sync)
+}
+
+// GetBucketCors gets CORS configuration
+func (p *PebbleStore) GetBucketCors(ctx context.Context, bucket string) (*metadata.CORSConfiguration, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	data, closer, err := p.db.Get(corsKey(bucket))
+	if err != nil {
+		if err == pebble.ErrNotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+	defer closer.Close()
+
+	var cors metadata.CORSConfiguration
+	if err := decodeMeta(data, &cors); err != nil {
+		return nil, err
+	}
+
+	return &cors, nil
+}
+
+// PutBucketPolicy stores bucket policy
+func (p *PebbleStore) PutBucketPolicy(ctx context.Context, bucket string, policy *string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if policy == nil {
+		return fmt.Errorf("policy cannot be nil")
+	}
+
+	return p.db.Set(policyKey(bucket), []byte(*policy), pebble.Sync)
+}
+
+// GetBucketPolicy gets bucket policy
+func (p *PebbleStore) GetBucketPolicy(ctx context.Context, bucket string) (*string, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	data, closer, err := p.db.Get(policyKey(bucket))
+	if err != nil {
+		if err == pebble.ErrNotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+	defer closer.Close()
+
+	policy := string(data)
+	return &policy, nil
+}
+
+// PutBucketEncryption stores bucket encryption configuration
+func (p *PebbleStore) PutBucketEncryption(ctx context.Context, bucket string, encryption *metadata.BucketEncryption) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	data, err := encodeMeta(encryption)
+	if err != nil {
+		return err
+	}
+
+	return p.db.Set(encryptionKey(bucket), data, pebble.Sync)
+}
+
+// GetBucketEncryption gets bucket encryption configuration
+func (p *PebbleStore) GetBucketEncryption(ctx context.Context, bucket string) (*metadata.BucketEncryption, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	data, closer, err := p.db.Get(encryptionKey(bucket))
+	if err != nil {
+		if err == pebble.ErrNotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+	defer closer.Close()
+
+	var encryption metadata.BucketEncryption
+	if err := decodeMeta(data, &encryption); err != nil {
+		return nil, err
+	}
+
+	return &encryption, nil
+}
+
 // PutReplicationConfig stores replication configuration
 func (p *PebbleStore) PutReplicationConfig(ctx context.Context, bucket string, config *metadata.ReplicationConfig) error {
 	p.mu.Lock()
@@ -502,6 +632,111 @@ func (p *PebbleStore) DeleteReplicationConfig(ctx context.Context, bucket string
 	defer p.mu.Unlock()
 
 	return p.db.Delete(replicationKey(bucket), pebble.Sync)
+}
+
+// PutBucketTags stores bucket tags
+func (p *PebbleStore) PutBucketTags(ctx context.Context, bucket string, tags map[string]string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	data, err := encodeMeta(tags)
+	if err != nil {
+		return err
+	}
+
+	return p.db.Set(tagsKey(bucket), data, pebble.Sync)
+}
+
+// GetBucketTags gets bucket tags
+func (p *PebbleStore) GetBucketTags(ctx context.Context, bucket string) (map[string]string, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	data, closer, err := p.db.Get(tagsKey(bucket))
+	if err != nil {
+		if err == pebble.ErrNotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+	defer closer.Close()
+
+	var tags map[string]string
+	if err := decodeMeta(data, &tags); err != nil {
+		return nil, err
+	}
+
+	return tags, nil
+}
+
+// PutObjectLock stores object lock configuration
+func (p *PebbleStore) PutObjectLock(ctx context.Context, bucket string, config *metadata.ObjectLockConfig) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	data, err := encodeMeta(config)
+	if err != nil {
+		return err
+	}
+
+	return p.db.Set(objectLockKey(bucket), data, pebble.Sync)
+}
+
+// GetObjectLock gets object lock configuration
+func (p *PebbleStore) GetObjectLock(ctx context.Context, bucket string) (*metadata.ObjectLockConfig, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	data, closer, err := p.db.Get(objectLockKey(bucket))
+	if err != nil {
+		if err == pebble.ErrNotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+	defer closer.Close()
+
+	var config metadata.ObjectLockConfig
+	if err := decodeMeta(data, &config); err != nil {
+		return nil, err
+	}
+
+	return &config, nil
+}
+
+// PutPublicAccessBlock stores public access block configuration
+func (p *PebbleStore) PutPublicAccessBlock(ctx context.Context, bucket string, config *metadata.PublicAccessBlockConfiguration) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	data, err := encodeMeta(config)
+	if err != nil {
+		return err
+	}
+
+	return p.db.Set(publicAccessBlockKey(bucket), data, pebble.Sync)
+}
+
+// GetPublicAccessBlock gets public access block configuration
+func (p *PebbleStore) GetPublicAccessBlock(ctx context.Context, bucket string) (*metadata.PublicAccessBlockConfiguration, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	data, closer, err := p.db.Get(publicAccessBlockKey(bucket))
+	if err != nil {
+		if err == pebble.ErrNotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+	defer closer.Close()
+
+	var config metadata.PublicAccessBlockConfiguration
+	if err := decodeMeta(data, &config); err != nil {
+		return nil, err
+	}
+
+	return &config, nil
 }
 
 // Close closes the store

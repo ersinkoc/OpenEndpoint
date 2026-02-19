@@ -3,8 +3,24 @@ package metadata
 import (
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"time"
 )
+
+// CORSConfiguration represents S3 CORS configuration
+type CORSConfiguration struct {
+	XMLName   xml.Name    `xml:"CORSConfiguration"`
+	CORSRules []CORSRule `xml:"CORSRule"`
+}
+
+// CORSRule represents a single CORS rule
+type CORSRule struct {
+	AllowedMethods []string `xml:"AllowedMethod"`
+	AllowedOrigins []string `xml:"AllowedOrigin"`
+	AllowedHeaders []string `xml:"AllowedHeader,omitempty"`
+	ExposeHeaders  []string `xml:"ExposeHeader,omitempty"`
+	MaxAgeSeconds  int      `xml:"MaxAgeSeconds,omitempty"`
+}
 
 // Store defines the interface for metadata storage
 type Store interface {
@@ -40,6 +56,30 @@ type Store interface {
 	// Versioning operations
 	PutBucketVersioning(ctx context.Context, bucket string, versioning *BucketVersioning) error
 	GetBucketVersioning(ctx context.Context, bucket string) (*BucketVersioning, error)
+
+	// CORS operations
+	PutBucketCors(ctx context.Context, bucket string, cors *CORSConfiguration) error
+	GetBucketCors(ctx context.Context, bucket string) (*CORSConfiguration, error)
+
+	// Policy operations
+	PutBucketPolicy(ctx context.Context, bucket string, policy *string) error
+	GetBucketPolicy(ctx context.Context, bucket string) (*string, error)
+
+	// Encryption operations
+	PutBucketEncryption(ctx context.Context, bucket string, encryption *BucketEncryption) error
+	GetBucketEncryption(ctx context.Context, bucket string) (*BucketEncryption, error)
+
+	// Tagging operations
+	PutBucketTags(ctx context.Context, bucket string, tags map[string]string) error
+	GetBucketTags(ctx context.Context, bucket string) (map[string]string, error)
+
+	// Object Lock operations
+	PutObjectLock(ctx context.Context, bucket string, config *ObjectLockConfig) error
+	GetObjectLock(ctx context.Context, bucket string) (*ObjectLockConfig, error)
+
+	// PublicAccessBlock operations
+	PutPublicAccessBlock(ctx context.Context, bucket string, config *PublicAccessBlockConfiguration) error
+	GetPublicAccessBlock(ctx context.Context, bucket string) (*PublicAccessBlockConfiguration, error)
 
 	// Close closes the store
 	Close() error
@@ -123,6 +163,35 @@ type Transition struct {
 
 type NoncurrentVersionExpiration struct {
 	NoncurrentDays int `json:"noncurrent_days"`
+}
+
+// BucketEncryption contains bucket encryption configuration
+type BucketEncryption struct {
+	Rule        EncryptionRule `json:"Rule"`
+}
+
+// EncryptionRule contains encryption rule
+type EncryptionRule struct {
+	Apply       ApplyEncryptionConfiguration `json:"Apply"`
+}
+
+// ApplyEncryptionConfiguration applies encryption configuration
+type ApplyEncryptionConfiguration struct {
+	SSEAlgorithm         string `json:"SSEAlgorithm,omitempty"`
+	KMSMasterKeyID      string `json:"KMSMasterKeyID,omitempty"`
+}
+
+// ObjectLockConfig contains object lock configuration
+type ObjectLockConfig struct {
+	Enabled bool `json:"Enabled"`
+}
+
+// PublicAccessBlockConfiguration contains public access block configuration
+type PublicAccessBlockConfiguration struct {
+	BlockPublicAcls       bool `json:"BlockPublicAcls"`
+	BlockPublicPolicy     bool `json:"BlockPublicPolicy"`
+	IgnorePublicAcls      bool `json:"IgnorePublicAcls"`
+	RestrictPublicBuckets bool `json:"RestrictPublicBuckets"`
 }
 
 // BucketVersioning contains versioning configuration

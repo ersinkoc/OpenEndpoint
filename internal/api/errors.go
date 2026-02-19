@@ -168,4 +168,10 @@ var (
 		message:    "Your proposed upload exceeds the maximum allowed object size.",
 		statusCode: 400,
 	}
+
+	ErrInvalidRequest = &s3Error{
+		code:       "InvalidRequest",
+		message:    "The request is invalid.",
+		statusCode: 400,
+	}
 )

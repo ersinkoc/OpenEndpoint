@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -11,6 +12,8 @@ import (
 	"github.com/openendpoint/openendpoint/internal/auth"
 	"github.com/openendpoint/openendpoint/internal/config"
 	"github.com/openendpoint/openendpoint/internal/engine"
+	"github.com/openendpoint/openendpoint/internal/metadata"
+	s3select "github.com/openendpoint/openendpoint/internal/select"
 	s3types "github.com/openendpoint/openendpoint/pkg/s3types"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -19,10 +22,11 @@ import (
 
 // Router handles S3 API requests
 type Router struct {
-	engine *engine.ObjectService
-	auth   *auth.Auth
-	logger *zap.SugaredLogger
-	config *config.Config
+	engine        *engine.ObjectService
+	auth          *auth.Auth
+	logger        *zap.SugaredLogger
+	config        *config.Config
+	selectService *s3select.SelectService
 }
 
 // s3RequestsTotal is a metric for tracking S3 API requests
@@ -33,16 +37,36 @@ var s3RequestsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 
 // NewRouter creates a new S3 API router
 func NewRouter(engine *engine.ObjectService, auth *auth.Auth, logger *zap.SugaredLogger, cfg *config.Config) *Router {
+	selectLogger, _ := zap.NewProduction()
 	return &Router{
-		engine: engine,
-		auth:   auth,
-		logger: logger,
-		config: cfg,
+		engine:        engine,
+		auth:          auth,
+		logger:        logger,
+		config:        cfg,
+		selectService: s3select.NewSelectService(selectLogger),
 	}
 }
 
 // ServeHTTP handles S3 API requests
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	// Check for presigned URL query parameters
+	if req.URL.Query().Get("X-Amz-Signature") != "" {
+		// Verify presigned URL
+		bucket, key, err := r.auth.VerifyPresignedURL(req)
+		if err != nil {
+			r.logger.Warnw("invalid presigned URL", "error", err)
+			r.writeError(w, ErrSignatureDoesNotMatch)
+			return
+		}
+
+		// For presigned URLs, we need to set the bucket and key properly
+		// The URL path should be adjusted to include the bucket for path-style
+		if bucket != "" && key != "" {
+			// Update the path to include bucket/key for path-style URLs
+			req.URL.Path = "/s3/" + bucket + "/" + key
+		}
+	}
+
 	// Route request
 	r.route(w, req)
 }
@@ -90,7 +114,26 @@ func (r *Router) route(w http.ResponseWriter, req *http.Request) {
 		if bucket == "" {
 			r.handleListBuckets(w, req)
 		} else if key == "" {
-			r.handleListObjects(w, req, bucket)
+			// Check for query string operations on bucket
+			if req.URL.Query().Get("versioning") != "" {
+				r.handleGetBucketVersioning(w, req, bucket)
+			} else if req.URL.Query().Get("lifecycle") != "" {
+				r.handleGetBucketLifecycle(w, req, bucket)
+			} else if req.URL.Query().Get("cors") != "" {
+				r.handleGetBucketCors(w, req, bucket)
+			} else if req.URL.Query().Get("policy") != "" {
+				r.handleGetBucketPolicy(w, req, bucket)
+			} else if req.URL.Query().Get("encryption") != "" {
+				r.handleGetBucketEncryption(w, req, bucket)
+			} else if req.URL.Query().Get("tagging") != "" {
+				r.handleGetBucketTags(w, req, bucket)
+			} else if req.URL.Query().Get("object-lock") != "" {
+				r.handleGetObjectLock(w, req, bucket)
+			} else if req.URL.Query().Get("public-access-block") != "" {
+				r.handleGetPublicAccessBlock(w, req, bucket)
+			} else {
+				r.handleListObjects(w, req, bucket)
+			}
 		} else {
 			r.handleGetObject(w, req, bucket, key)
 		}
@@ -98,7 +141,26 @@ func (r *Router) route(w http.ResponseWriter, req *http.Request) {
 		if bucket == "" {
 			r.writeError(w, ErrInvalidBucketName)
 		} else if key == "" {
-			r.handleCreateBucket(w, req, bucket)
+			// Check for query string operations on bucket
+			if req.URL.Query().Get("versioning") != "" {
+				r.handlePutBucketVersioning(w, req, bucket)
+			} else if req.URL.Query().Get("lifecycle") != "" {
+				r.handlePutBucketLifecycle(w, req, bucket)
+			} else if req.URL.Query().Get("cors") != "" {
+				r.handlePutBucketCors(w, req, bucket)
+			} else if req.URL.Query().Get("policy") != "" {
+				r.handlePutBucketPolicy(w, req, bucket)
+			} else if req.URL.Query().Get("encryption") != "" {
+				r.handlePutBucketEncryption(w, req, bucket)
+			} else if req.URL.Query().Get("tagging") != "" {
+				r.handlePutBucketTags(w, req, bucket)
+			} else if req.URL.Query().Get("object-lock") != "" {
+				r.handlePutObjectLock(w, req, bucket)
+			} else if req.URL.Query().Get("public-access-block") != "" {
+				r.handlePutPublicAccessBlock(w, req, bucket)
+			} else {
+				r.handleCreateBucket(w, req, bucket)
+			}
 		} else {
 			r.handlePutObject(w, req, bucket, key)
 		}
@@ -115,8 +177,19 @@ func (r *Router) route(w http.ResponseWriter, req *http.Request) {
 			r.writeError(w, ErrNotImplemented)
 		}
 	case http.MethodPost:
-		// Handle post to bucket for list multipart uploads
+		// Handle post to bucket/key (S3 Select)
+		if bucket != "" && key != "" && req.URL.Query().Get("select") != "" {
+			r.handleSelectObjectContent(w, req, bucket, key)
+			return
+		}
+		// Handle post to bucket
 		if bucket != "" && key == "" {
+			// Check for query string operations
+			if req.URL.Query().Get("delete") != "" {
+				r.handleDeleteObjects(w, req, bucket)
+				return
+			}
+			// Handle list multipart uploads
 			r.handleListMultipartUploads(w, req, bucket)
 			return
 		}
@@ -601,4 +674,640 @@ func (r *Router) handleListMultipartUploads(w http.ResponseWriter, req *http.Req
 	w.Write(xmlBytes)
 
 	s3RequestsTotal.WithLabelValues("ListMultipartUploads", "200").Inc()
+}
+
+// handleGetBucketVersioning handles GET /bucket?versioning
+func (r *Router) handleGetBucketVersioning(w http.ResponseWriter, req *http.Request, bucket string) {
+	ctx := req.Context()
+
+	versioning, err := r.engine.GetBucketVersioning(ctx, bucket)
+	if err != nil {
+		r.logger.Warnw("failed to get bucket versioning", "bucket", bucket, "error", err)
+		r.writeError(w, ErrInternal)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/xml")
+	w.WriteHeader(http.StatusOK)
+
+	status := ""
+	if versioning != nil && versioning.Status == "Enabled" {
+		status = "Enabled"
+	}
+
+	resp := s3types.GetBucketVersioningOutput{
+		Status: status,
+	}
+	xmlBytes, _ := xml.Marshal(resp)
+	w.Write(xmlBytes)
+
+	s3RequestsTotal.WithLabelValues("GetBucketVersioning", "200").Inc()
+}
+
+// handlePutBucketVersioning handles PUT /bucket?versioning
+func (r *Router) handlePutBucketVersioning(w http.ResponseWriter, req *http.Request, bucket string) {
+	ctx := req.Context()
+
+	// Read body
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		r.logger.Warnw("failed to read request body", "error", err)
+		r.writeError(w, ErrInternal)
+		return
+	}
+
+	var input s3types.PutBucketVersioningInput
+	if err := xml.Unmarshal(body, &input); err != nil {
+		r.logger.Warnw("failed to parse versioning input", "error", err)
+		r.writeError(w, ErrMalformedXML)
+		return
+	}
+
+	// Set versioning
+	versioning := &metadata.BucketVersioning{
+		Status: input.Status,
+	}
+
+	if err := r.engine.PutBucketVersioning(ctx, bucket, versioning); err != nil {
+		r.logger.Warnw("failed to set bucket versioning", "bucket", bucket, "error", err)
+		r.writeError(w, ErrInternal)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	s3RequestsTotal.WithLabelValues("PutBucketVersioning", "200").Inc()
+}
+
+// handleGetBucketLifecycle handles GET /bucket?lifecycle
+func (r *Router) handleGetBucketLifecycle(w http.ResponseWriter, req *http.Request, bucket string) {
+	ctx := req.Context()
+
+	rules, err := r.engine.GetBucketLifecycle(ctx, bucket)
+	if err != nil {
+		r.logger.Warnw("failed to get bucket lifecycle", "bucket", bucket, "error", err)
+		r.writeError(w, ErrInternal)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/xml")
+	w.WriteHeader(http.StatusOK)
+
+	// Convert metadata rules to s3types rules
+	s3Rules := make([]s3types.LifecycleRule, len(rules))
+	for i, rule := range rules {
+		s3Rules[i] = s3types.LifecycleRule{
+			ID:     rule.ID,
+			Status: rule.Status,
+		}
+		if rule.Expiration != nil && rule.Expiration.Days > 0 {
+			s3Rules[i].Expiration = &s3types.Expiration{
+				Days: rule.Expiration.Days,
+			}
+		}
+		if rule.NoncurrentVersionExpiration != nil && rule.NoncurrentVersionExpiration.NoncurrentDays > 0 {
+			s3Rules[i].NoncurrentVersionExpiration = &s3types.NoncurrentVersionExpiration{
+				NoncurrentDays: rule.NoncurrentVersionExpiration.NoncurrentDays,
+			}
+		}
+	}
+
+	resp := s3types.GetBucketLifecycleOutput{
+		Rules: s3Rules,
+	}
+	xmlBytes, _ := xml.Marshal(resp)
+	w.Write(xmlBytes)
+
+	s3RequestsTotal.WithLabelValues("GetBucketLifecycle", "200").Inc()
+}
+
+// handlePutBucketLifecycle handles PUT /bucket?lifecycle
+func (r *Router) handlePutBucketLifecycle(w http.ResponseWriter, req *http.Request, bucket string) {
+	ctx := req.Context()
+
+	// Read body
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		r.logger.Warnw("failed to read request body", "error", err)
+		r.writeError(w, ErrInternal)
+		return
+	}
+
+	var input s3types.PutBucketLifecycleInput
+	if err := xml.Unmarshal(body, &input); err != nil {
+		r.logger.Warnw("failed to parse lifecycle input", "error", err)
+		r.writeError(w, ErrMalformedXML)
+		return
+	}
+
+	// Convert s3types rules to metadata rules
+	rules := make([]metadata.LifecycleRule, len(input.Rules))
+	for i, rule := range input.Rules {
+		rules[i] = metadata.LifecycleRule{
+			ID:     rule.ID,
+			Status: rule.Status,
+		}
+		if rule.Expiration != nil {
+			rules[i].Expiration = &metadata.Expiration{
+				Days: int(rule.Expiration.Days),
+			}
+		}
+		if rule.NoncurrentVersionExpiration != nil {
+			rules[i].NoncurrentVersionExpiration = &metadata.NoncurrentVersionExpiration{
+				NoncurrentDays: int(rule.NoncurrentVersionExpiration.NoncurrentDays),
+			}
+		}
+	}
+
+	if err := r.engine.PutBucketLifecycle(ctx, bucket, rules); err != nil {
+		r.logger.Warnw("failed to set bucket lifecycle", "bucket", bucket, "error", err)
+		r.writeError(w, ErrInternal)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	s3RequestsTotal.WithLabelValues("PutBucketLifecycle", "200").Inc()
+}
+
+// handleGetBucketCors handles GET /bucket?cors
+func (r *Router) handleGetBucketCors(w http.ResponseWriter, req *http.Request, bucket string) {
+	ctx := req.Context()
+
+	cors, err := r.engine.GetBucketCors(ctx, bucket)
+	if err != nil {
+		r.logger.Warnw("failed to get bucket cors", "bucket", bucket, "error", err)
+		r.writeError(w, ErrInternal)
+		return
+	}
+
+	// Return CORS configuration or empty
+	if cors == nil {
+		cors = &metadata.CORSConfiguration{}
+	}
+
+	r.writeXML(w, http.StatusOK, cors)
+	s3RequestsTotal.WithLabelValues("GetBucketCors", "200").Inc()
+}
+
+// handlePutBucketCors handles PUT /bucket?cors
+func (r *Router) handlePutBucketCors(w http.ResponseWriter, req *http.Request, bucket string) {
+	ctx := req.Context()
+
+	// Read body
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		r.logger.Warnw("failed to read request body", "error", err)
+		r.writeError(w, ErrInternal)
+		return
+	}
+
+	// Parse CORS configuration
+	var cors metadata.CORSConfiguration
+	if err := xml.Unmarshal(body, &cors); err != nil {
+		r.logger.Warnw("failed to parse CORS configuration", "error", err)
+		r.writeError(w, ErrInvalidRequest)
+		return
+	}
+
+	// Store CORS configuration
+	if err := r.engine.PutBucketCors(ctx, bucket, &cors); err != nil {
+		r.logger.Warnw("failed to set bucket cors", "bucket", bucket, "error", err)
+		r.writeError(w, ErrInternal)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	s3RequestsTotal.WithLabelValues("PutBucketCors", "200").Inc()
+}
+
+// handleGetBucketPolicy handles GET /bucket?policy
+func (r *Router) handleGetBucketPolicy(w http.ResponseWriter, req *http.Request, bucket string) {
+	ctx := req.Context()
+
+	policy, err := r.engine.GetBucketPolicy(ctx, bucket)
+	if err != nil {
+		r.logger.Warnw("failed to get bucket policy", "bucket", bucket, "error", err)
+		r.writeError(w, ErrInternal)
+		return
+	}
+
+	// Return policy or empty JSON object
+	if policy == nil || *policy == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("{}"))
+		s3RequestsTotal.WithLabelValues("GetBucketPolicy", "200").Inc()
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(*policy))
+	s3RequestsTotal.WithLabelValues("GetBucketPolicy", "200").Inc()
+}
+
+// handlePutBucketPolicy handles PUT /bucket?policy
+func (r *Router) handlePutBucketPolicy(w http.ResponseWriter, req *http.Request, bucket string) {
+	ctx := req.Context()
+
+	// Read body
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		r.logger.Warnw("failed to read request body", "error", err)
+		r.writeError(w, ErrInternal)
+		return
+	}
+
+	// Validate JSON policy
+	var policyJSON map[string]interface{}
+	if err := json.Unmarshal(body, &policyJSON); err != nil {
+		r.logger.Warnw("failed to parse bucket policy", "error", err)
+		r.writeError(w, ErrInvalidRequest)
+		return
+	}
+
+	// Store policy
+	policyStr := string(body)
+	if err := r.engine.PutBucketPolicy(ctx, bucket, &policyStr); err != nil {
+		r.logger.Warnw("failed to set bucket policy", "bucket", bucket, "error", err)
+		r.writeError(w, ErrInternal)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	s3RequestsTotal.WithLabelValues("PutBucketPolicy", "200").Inc()
+}
+
+// handleGetBucketEncryption handles GET /bucket?encryption
+func (r *Router) handleGetBucketEncryption(w http.ResponseWriter, req *http.Request, bucket string) {
+	ctx := req.Context()
+
+	encryption, err := r.engine.GetBucketEncryption(ctx, bucket)
+	if err != nil {
+		r.logger.Warnw("failed to get bucket encryption", "bucket", bucket, "error", err)
+		r.writeError(w, ErrInternal)
+		return
+	}
+
+	// Return encryption configuration or empty
+	if encryption == nil {
+		encryption = &metadata.BucketEncryption{}
+	}
+
+	r.writeXML(w, http.StatusOK, encryption)
+	s3RequestsTotal.WithLabelValues("GetBucketEncryption", "200").Inc()
+}
+
+// handlePutBucketEncryption handles PUT /bucket?encryption
+func (r *Router) handlePutBucketEncryption(w http.ResponseWriter, req *http.Request, bucket string) {
+	ctx := req.Context()
+
+	// Read body
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		r.logger.Warnw("failed to read request body", "error", err)
+		r.writeError(w, ErrInternal)
+		return
+	}
+
+	// Parse encryption configuration
+	var encryption metadata.BucketEncryption
+	if err := xml.Unmarshal(body, &encryption); err != nil {
+		r.logger.Warnw("failed to parse encryption configuration", "error", err)
+		r.writeError(w, ErrMalformedXML)
+		return
+	}
+
+	// Store encryption configuration
+	if err := r.engine.PutBucketEncryption(ctx, bucket, &encryption); err != nil {
+		r.logger.Warnw("failed to set bucket encryption", "bucket", bucket, "error", err)
+		r.writeError(w, ErrInternal)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	s3RequestsTotal.WithLabelValues("PutBucketEncryption", "200").Inc()
+}
+
+// handleGetBucketTags handles GET /bucket?tagging
+func (r *Router) handleGetBucketTags(w http.ResponseWriter, req *http.Request, bucket string) {
+	ctx := req.Context()
+
+	tags, err := r.engine.GetBucketTags(ctx, bucket)
+	if err != nil {
+		r.logger.Warnw("failed to get bucket tags", "bucket", bucket, "error", err)
+		r.writeError(w, ErrInternal)
+		return
+	}
+
+	// Return tags or empty map
+	if tags == nil {
+		tags = make(map[string]string)
+	}
+
+	// Format as XML response
+	type Tag struct {
+		Key   string `xml:"Key"`
+		Value string `xml:"Value"`
+	}
+	type TagSet struct {
+		Tag []Tag `xml:"Tag"`
+	}
+	type TaggingResponse struct {
+		XMLName xml.Name `xml:"Tagging"`
+		TagSet  TagSet  `xml:"TagSet"`
+	}
+
+	response := TaggingResponse{
+		TagSet: TagSet{
+			Tag: make([]Tag, 0),
+		},
+	}
+	for k, v := range tags {
+		response.TagSet.Tag = append(response.TagSet.Tag, Tag{Key: k, Value: v})
+	}
+
+	r.writeXML(w, http.StatusOK, response)
+	s3RequestsTotal.WithLabelValues("GetBucketTags", "200").Inc()
+}
+
+// handlePutBucketTags handles PUT /bucket?tagging
+func (r *Router) handlePutBucketTags(w http.ResponseWriter, req *http.Request, bucket string) {
+	ctx := req.Context()
+
+	// Read body
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		r.logger.Warnw("failed to read request body", "error", err)
+		r.writeError(w, ErrInternal)
+		return
+	}
+
+	// Parse tagging XML
+	type Tag struct {
+		Key   string `xml:"Key"`
+		Value string `xml:"Value"`
+	}
+	type TagSet struct {
+		Tag []Tag `xml:"Tag"`
+	}
+	type TaggingInput struct {
+		TagSet TagSet `xml:"TagSet"`
+	}
+
+	var input TaggingInput
+	if err := xml.Unmarshal(body, &input); err != nil {
+		r.logger.Warnw("failed to parse tagging input", "error", err)
+		r.writeError(w, ErrMalformedXML)
+		return
+	}
+
+	// Convert to map
+	tags := make(map[string]string)
+	for _, t := range input.TagSet.Tag {
+		tags[t.Key] = t.Value
+	}
+
+	// Store tags
+	if err := r.engine.PutBucketTags(ctx, bucket, tags); err != nil {
+		r.logger.Warnw("failed to set bucket tags", "bucket", bucket, "error", err)
+		r.writeError(w, ErrInternal)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	s3RequestsTotal.WithLabelValues("PutBucketTags", "200").Inc()
+}
+
+// handleGetObjectLock handles GET /bucket?object-lock
+func (r *Router) handleGetObjectLock(w http.ResponseWriter, req *http.Request, bucket string) {
+	ctx := req.Context()
+
+	config, err := r.engine.GetObjectLock(ctx, bucket)
+	if err != nil {
+		r.logger.Warnw("failed to get object lock", "bucket", bucket, "error", err)
+		r.writeError(w, ErrInternal)
+		return
+	}
+
+	// Return configuration or empty
+	if config == nil {
+		config = &metadata.ObjectLockConfig{}
+	}
+
+	r.writeXML(w, http.StatusOK, config)
+	s3RequestsTotal.WithLabelValues("GetObjectLock", "200").Inc()
+}
+
+// handlePutObjectLock handles PUT /bucket?object-lock
+func (r *Router) handlePutObjectLock(w http.ResponseWriter, req *http.Request, bucket string) {
+	ctx := req.Context()
+
+	// Read body
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		r.logger.Warnw("failed to read request body", "error", err)
+		r.writeError(w, ErrInternal)
+		return
+	}
+
+	// Parse object lock configuration
+	var config metadata.ObjectLockConfig
+	if err := xml.Unmarshal(body, &config); err != nil {
+		r.logger.Warnw("failed to parse object lock configuration", "error", err)
+		r.writeError(w, ErrMalformedXML)
+		return
+	}
+
+	// Store configuration
+	if err := r.engine.PutObjectLock(ctx, bucket, &config); err != nil {
+		r.logger.Warnw("failed to set object lock", "bucket", bucket, "error", err)
+		r.writeError(w, ErrInternal)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	s3RequestsTotal.WithLabelValues("PutObjectLock", "200").Inc()
+}
+
+// handleGetPublicAccessBlock handles GET /bucket?public-access-block
+func (r *Router) handleGetPublicAccessBlock(w http.ResponseWriter, req *http.Request, bucket string) {
+	ctx := req.Context()
+
+	config, err := r.engine.GetPublicAccessBlock(ctx, bucket)
+	if err != nil {
+		r.logger.Warnw("failed to get public access block", "bucket", bucket, "error", err)
+		r.writeError(w, ErrInternal)
+		return
+	}
+
+	// Return configuration or empty
+	if config == nil {
+		config = &metadata.PublicAccessBlockConfiguration{}
+	}
+
+	// Wrap in XML response
+	type PublicAccessBlockConfiguration struct {
+		XMLName                      xml.Name `xml:"PublicAccessBlockConfiguration"`
+		BlockPublicAcls       bool   `xml:"BlockPublicAcls"`
+		BlockPublicPolicy     bool   `xml:"BlockPublicPolicy"`
+		IgnorePublicAcls      bool   `xml:"IgnorePublicAcls"`
+		RestrictPublicBuckets bool   `xml:"RestrictPublicBuckets"`
+	}
+
+	response := PublicAccessBlockConfiguration{
+		BlockPublicAcls:       config.BlockPublicAcls,
+		BlockPublicPolicy:     config.BlockPublicPolicy,
+		IgnorePublicAcls:      config.IgnorePublicAcls,
+		RestrictPublicBuckets: config.RestrictPublicBuckets,
+	}
+
+	r.writeXML(w, http.StatusOK, response)
+	s3RequestsTotal.WithLabelValues("GetPublicAccessBlock", "200").Inc()
+}
+
+// handlePutPublicAccessBlock handles PUT /bucket?public-access-block
+func (r *Router) handlePutPublicAccessBlock(w http.ResponseWriter, req *http.Request, bucket string) {
+	ctx := req.Context()
+
+	// Read body
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		r.logger.Warnw("failed to read request body", "error", err)
+		r.writeError(w, ErrInternal)
+		return
+	}
+
+	// Parse public access block configuration
+	var config metadata.PublicAccessBlockConfiguration
+	if err := xml.Unmarshal(body, &config); err != nil {
+		r.logger.Warnw("failed to parse public access block configuration", "error", err)
+		r.writeError(w, ErrMalformedXML)
+		return
+	}
+
+	// Store configuration
+	if err := r.engine.PutPublicAccessBlock(ctx, bucket, &config); err != nil {
+		r.logger.Warnw("failed to set public access block", "bucket", bucket, "error", err)
+		r.writeError(w, ErrInternal)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	s3RequestsTotal.WithLabelValues("PutPublicAccessBlock", "200").Inc()
+}
+
+// handleDeleteObjects handles POST /bucket?delete (batch delete)
+func (r *Router) handleDeleteObjects(w http.ResponseWriter, req *http.Request, bucket string) {
+	ctx := req.Context()
+
+	// Read body
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		r.logger.Warnw("failed to read request body", "error", err)
+		r.writeError(w, ErrInternal)
+		return
+	}
+
+	var input s3types.DeleteObjectsInput
+	if err := xml.Unmarshal(body, &input); err != nil {
+		r.logger.Warnw("failed to parse delete input", "error", err)
+		r.writeError(w, ErrMalformedXML)
+		return
+	}
+
+	// Delete objects
+	var deleted []s3types.DeletedObject
+	var errors []s3types.DeleteError
+
+	for _, obj := range input.Objects {
+		err := r.engine.DeleteObject(ctx, bucket, obj.Key, engine.DeleteObjectOptions{
+			VersionID: obj.VersionID,
+		})
+		if err != nil {
+			errors = append(errors, s3types.DeleteError{
+				Key:       obj.Key,
+				VersionID: obj.VersionID,
+				Code:      "AccessDenied",
+				Message:   err.Error(),
+			})
+		} else {
+			deleted = append(deleted, s3types.DeletedObject{
+				Key:       obj.Key,
+				VersionID: obj.VersionID,
+			})
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/xml")
+	w.WriteHeader(http.StatusOK)
+
+	resp := s3types.DeleteObjectsOutput{
+		Deleted: deleted,
+		Errors:  errors,
+	}
+	xmlBytes, _ := xml.Marshal(resp)
+	w.Write(xmlBytes)
+
+	s3RequestsTotal.WithLabelValues("DeleteObjects", "200").Inc()
+}
+
+// handleSelectObjectContent handles S3 Select (POST /bucket/key?select)
+func (r *Router) handleSelectObjectContent(w http.ResponseWriter, req *http.Request, bucket, key string) {
+	ctx := req.Context()
+
+	// Get the object first
+	obj, err := r.engine.GetObject(ctx, bucket, key, engine.GetObjectOptions{})
+	if err != nil {
+		r.logger.Warnw("failed to get object for select", "bucket", bucket, "key", key, "error", err)
+		r.writeError(w, ErrNoSuchKey)
+		return
+	}
+	defer obj.Body.Close()
+
+	// Read the body
+	data, err := io.ReadAll(obj.Body)
+	if err != nil {
+		r.logger.Warnw("failed to read object data", "error", err)
+		r.writeError(w, ErrInternal)
+		return
+	}
+
+	// Parse the S3 Select request body
+	var selectInput s3types.SelectObjectContentRequest
+	if err := xml.Unmarshal(data, &selectInput); err != nil {
+		r.logger.Warnw("failed to parse select input", "error", err)
+		r.writeError(w, ErrMalformedXML)
+		return
+	}
+
+	// Determine input format (CSV or JSON)
+	inputFormat := s3select.FormatJSON
+	if selectInput.InputSerialization.CSV != nil {
+		inputFormat = s3select.FormatCSV
+	}
+
+	// Create select request
+	selectReq := &s3select.SelectRequest{
+		Bucket:     bucket,
+		Key:        key,
+		Expression: selectInput.Expression,
+		InputSerialization: s3select.InputSerialization{
+			Format: inputFormat,
+		},
+	}
+
+	// Execute select - pass the original object data, not the request body
+	result, err := r.selectService.Execute(ctx, selectReq, bytes.NewReader(data))
+	if err != nil {
+		r.logger.Warnw("failed to execute select", "error", err)
+		r.writeError(w, ErrInternal)
+		return
+	}
+
+	// Write response
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(result.Payload)
+
+	s3RequestsTotal.WithLabelValues("SelectObjectContent", "200").Inc()
 }

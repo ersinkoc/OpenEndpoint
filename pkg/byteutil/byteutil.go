@@ -97,7 +97,6 @@ func formatFloat(v float64, precision int) string {
 	if math.Abs(v) >= 100 {
 		return "0"
 	}
-	format := "%." + string(rune('0'+precision)) + "f"
 	s := formatFloatStr(v, precision)
 	return s
 }

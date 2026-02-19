@@ -236,3 +236,42 @@ type S3AnalyticsDestination struct {
 	Bucket       string   `xml:"Bucket"`
 	Prefix       string   `xml:"Prefix,omitempty"`
 }
+
+// DeleteObjectsInput is the request for DeleteObjects
+type DeleteObjectsInput struct {
+	XMLName xml.Name    `xml:"Delete"`
+	Quiet   bool        `xml:"Quiet"`
+	Objects []ObjectID  `xml:"Object"`
+}
+
+// ObjectID represents an object to delete
+type ObjectID struct {
+	XMLName   xml.Name `xml:"Object"`
+	Key       string   `xml:"Key"`
+	VersionID string   `xml:"VersionId,omitempty"`
+}
+
+// DeleteObjectsOutput is the response for DeleteObjects
+type DeleteObjectsOutput struct {
+	XMLName      xml.Name        `xml:"DeleteResult"`
+	Deleted      []DeletedObject `xml:"Deleted"`
+	Errors       []DeleteError   `xml:"Error"`
+}
+
+// DeletedObject represents a successfully deleted object
+type DeletedObject struct {
+	XMLName   xml.Name `xml:"Deleted"`
+	Key       string   `xml:"Key"`
+	VersionID string   `xml:"VersionId,omitempty"`
+	DeleteMarker          bool   `xml:"DeleteMarker,omitempty"`
+	DeleteMarkerVersionID string `xml:"DeleteMarkerVersionId,omitempty"`
+}
+
+// DeleteError represents a delete error
+type DeleteError struct {
+	XMLName   xml.Name `xml:"Error"`
+	Key       string   `xml:"Key"`
+	VersionID string   `xml:"VersionId,omitempty"`
+	Code      string   `xml:"Code"`
+	Message   string   `xml:"Message"`
+}

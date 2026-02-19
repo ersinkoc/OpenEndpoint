@@ -215,7 +215,12 @@ func NewObjectCache(maxSize int) *ObjectCache {
 // GetObject retrieves an object from cache
 func (oc *ObjectCache) GetObject(bucket, key string) ([]byte, bool) {
 	cacheKey := fmt.Sprintf("%s/%s", bucket, key)
-	return oc.Cache.Get(cacheKey)
+	val, ok := oc.Cache.Get(cacheKey)
+	if !ok {
+		return nil, false
+	}
+	data, ok := val.([]byte)
+	return data, ok
 }
 
 // SetObject stores an object in cache
@@ -244,7 +249,12 @@ func NewBucketCache() *BucketCache {
 
 // GetBuckets retrieves buckets from cache
 func (bc *BucketCache) GetBuckets() ([]string, bool) {
-	return bc.Cache.Get("buckets:list")
+	val, ok := bc.Cache.Get("buckets:list")
+	if !ok {
+		return nil, false
+	}
+	buckets, ok := val.([]string)
+	return buckets, ok
 }
 
 // SetBuckets stores bucket list in cache

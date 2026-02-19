@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Metrics - OpenEndpoint</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -210,9 +211,18 @@
                 <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center text-white text-2xl font-bold shadow-lg shadow-violet-500/30">
                     OE
                 </div>
-                <h1 class="text-4xl font-extrabold text-gradient">OpenEndpoint</h1>
+                <div>
+                    <h1 class="text-4xl font-extrabold text-gradient">OpenEndpoint</h1>
+                    <p class="text-muted-foreground text-lg font-medium">Metrics Dashboard</p>
+                </div>
             </div>
-            <p class="text-muted-foreground text-lg font-medium">Metrics Dashboard</p>
+            <div class="flex items-center justify-center gap-4">
+                <span class="badge bg-emerald-500/20 text-emerald-400 border-emerald-500/30" id="status-indicator">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400 mr-2 animate-pulse"></span>
+                    running
+                </span>
+                <span class="text-muted-foreground text-sm">Auto-refresh: 5s</span>
+            </div>
         </header>
 
         <!-- Navigation -->
@@ -238,7 +248,12 @@
                     Storage
                 </h2>
                 <div class="text-4xl font-bold text-white mb-2" id="storage-bytes">-</div>
-                <div class="text-muted-foreground mb-6">Total Bytes Stored</div>
+                <div class="text-muted-foreground mb-4">Total Bytes Stored</div>
+
+                <!-- Storage Chart -->
+                <div class="h-48 mb-4">
+                    <canvas id="storageChart"></canvas>
+                </div>
 
                 <div class="space-y-3">
                     <div class="flex justify-between items-center py-2 border-b border-border">
@@ -263,7 +278,12 @@
                     Requests
                 </h2>
                 <div class="text-4xl font-bold text-white mb-2" id="active-requests">-</div>
-                <div class="text-muted-foreground mb-6">Active Requests</div>
+                <div class="text-muted-foreground mb-4">Active Requests</div>
+
+                <!-- Requests Chart -->
+                <div class="h-48 mb-4">
+                    <canvas id="requestsChart"></canvas>
+                </div>
 
                 <div class="space-y-3">
                     <div class="flex justify-between items-center py-2 border-b border-border">
@@ -274,6 +294,17 @@
                         <span class="text-muted-foreground">Failed Requests</span>
                         <span class="font-semibold text-red-400" id="failed-requests">-</span>
                     </div>
+                </div>
+            </div>
+
+            <!-- Real-time History -->
+            <div class="card p-6 animate-fade-in col-span-1 md:col-span-2" style="animation-delay: 0.15s">
+                <h2 class="text-xl font-bold text-white mb-6 flex items-center gap-2">
+                    <span class="w-1 h-6 bg-gradient-to-b from-blue-500 to-cyan-500 rounded-full"></span>
+                    Real-time Activity
+                </h2>
+                <div class="h-64">
+                    <canvas id="historyChart"></canvas>
                 </div>
             </div>
 
@@ -348,6 +379,37 @@
     </div>
 
     <script>
+        // Real-time data storage
+        let metricsHistory = {
+            timestamps: [],
+            requests: [],
+            bytesIn: [],
+            bytesOut: []
+        };
+        const maxHistoryPoints = 30;
+
+        async function fetchStatus() {
+            try {
+                const response = await fetch('/_dashboard/api/status');
+                if (!response.ok) throw new Error('Failed to fetch status');
+                return await response.json();
+            } catch (error) {
+                console.error('Status fetch error:', error);
+                return null;
+            }
+        }
+
+        async function fetchBuckets() {
+            try {
+                const response = await fetch('/_dashboard/api/buckets');
+                if (!response.ok) throw new Error('Failed to fetch buckets');
+                return await response.json();
+            } catch (error) {
+                console.error('Buckets fetch error:', error);
+                return null;
+            }
+        }
+
         async function fetchMetrics() {
             try {
                 const response = await fetch('/metrics');
@@ -371,6 +433,162 @@
             return null;
         }
 
+        // Chart instances
+        let storageChart = null;
+        let requestsChart = null;
+        let historyChart = null;
+
+        // Initialize charts
+        function initCharts() {
+            const chartOptions = {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { color: 'rgba(255,255,255,0.1)' },
+                        ticks: { color: '#71717a' }
+                    },
+                    y: {
+                        grid: { color: 'rgba(255,255,255,0.1)' },
+                        ticks: { color: '#71717a' }
+                    }
+                }
+            };
+
+            // Storage doughnut chart
+            const storageCtx = document.getElementById('storageChart').getContext('2d');
+            storageChart = new Chart(storageCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Used', 'Free'],
+                    datasets: [{
+                        data: [0, 100],
+                        backgroundColor: ['#8b5cf6', '#27272a'],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    ...chartOptions,
+                    cutout: '70%'
+                }
+            });
+
+            // Requests bar chart
+            const requestsCtx = document.getElementById('requestsChart').getContext('2d');
+            requestsChart = new Chart(requestsCtx, {
+                type: 'bar',
+                data: {
+                    labels: ['GET', 'PUT', 'LIST', 'DELETE', 'HEAD'],
+                    datasets: [{
+                        data: [0, 0, 0, 0, 0],
+                        backgroundColor: ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6'],
+                        borderWidth: 0
+                    }]
+                },
+                options: chartOptions
+            });
+
+            // History line chart
+            const historyCtx = document.getElementById('historyChart');
+            if (historyCtx) {
+                historyChart = new Chart(historyCtx.getContext('2d'), {
+                    type: 'line',
+                    data: {
+                        labels: [],
+                        datasets: [
+                            {
+                                label: 'Requests/sec',
+                                data: [],
+                                borderColor: '#10b981',
+                                backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                                fill: true,
+                                tension: 0.4
+                            },
+                            {
+                                label: 'KB/s In',
+                                data: [],
+                                borderColor: '#3b82f6',
+                                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                                fill: true,
+                                tension: 0.4
+                            },
+                            {
+                                label: 'KB/s Out',
+                                data: [],
+                                borderColor: '#f59e0b',
+                                backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                                fill: true,
+                                tension: 0.4
+                            }
+                        ]
+                    },
+                    options: {
+                        ...chartOptions,
+                        plugins: {
+                            legend: {
+                                display: true,
+                                position: 'top',
+                                labels: { color: '#71717a' }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        // Update charts with new data
+        function updateCharts(storageBytes, storageObjects, activeRequests, totalOps) {
+            if (storageChart) {
+                // Simulate some free space for demo
+                const usedPercent = Math.min(100, Math.max(1, (storageBytes / (1024 * 1024 * 1024)) * 10));
+                storageChart.data.datasets[0].data = [usedPercent, 100 - usedPercent];
+                storageChart.update();
+            }
+
+            if (requestsChart) {
+                // Update with actual data
+                const opsGet = parseMetric(document.getElementById('ops-get')?.textContent.replace(/,/g, '') || '0', '') || 0;
+                const opsPut = parseMetric(document.getElementById('ops-put')?.textContent.replace(/,/g, '') || '0', '') || 0;
+                const opsList = parseMetric(document.getElementById('ops-list')?.textContent.replace(/,/g, '') || '0', '') || 0;
+                const opsDelete = parseMetric(document.getElementById('ops-delete')?.textContent.replace(/,/g, '') || '0', '') || 0;
+                const opsHead = parseMetric(document.getElementById('ops-head')?.textContent.replace(/,/g, '') || '0', '') || 0;
+
+                requestsChart.data.datasets[0].data = [opsGet, opsPut, opsList, opsDelete, opsHead];
+                requestsChart.update();
+            }
+        }
+
+        // Update history chart
+        function updateHistory(requestsPerSec, kbpsIn, kbpsOut) {
+            const now = new Date().toLocaleTimeString();
+
+            metricsHistory.timestamps.push(now);
+            metricsHistory.requests.push(requestsPerSec);
+            metricsHistory.bytesIn.push(kbpsIn);
+            metricsHistory.bytesOut.push(kbpsOut);
+
+            // Keep only last N points
+            if (metricsHistory.timestamps.length > maxHistoryPoints) {
+                metricsHistory.timestamps.shift();
+                metricsHistory.requests.shift();
+                metricsHistory.bytesIn.shift();
+                metricsHistory.bytesOut.shift();
+            }
+
+            if (historyChart) {
+                historyChart.data.labels = metricsHistory.timestamps;
+                historyChart.data.datasets[0].data = metricsHistory.requests;
+                historyChart.data.datasets[1].data = metricsHistory.bytesIn;
+                historyChart.data.datasets[2].data = metricsHistory.bytesOut;
+                historyChart.update();
+            }
+        }
+
         function formatBytes(bytes) {
             if (bytes === null) return '-';
             if (bytes === 0) return '0 B';
@@ -387,6 +605,14 @@
             return seconds.toFixed(2) + ' s';
         }
 
+        // Last metrics for rate calculation
+        let lastMetrics = {
+            requestsTotal: 0,
+            bytesUploaded: 0,
+            bytesDownloaded: 0,
+            timestamp: Date.now()
+        };
+
         async function refreshMetrics() {
             const loading = document.getElementById('loading');
             const error = document.getElementById('error');
@@ -397,51 +623,79 @@
             grid.style.display = 'none';
 
             try {
-                const text = await fetchMetrics();
+                // Fetch from multiple sources
+                const [statusData, bucketsData, metricsText] = await Promise.all([
+                    fetchStatus(),
+                    fetchBuckets(),
+                    fetchMetrics()
+                ]);
+
+                // Update status display
+                if (statusData) {
+                    const statusEl = document.getElementById('status-indicator');
+                    if (statusEl) {
+                        statusEl.textContent = statusData.status || 'unknown';
+                        statusEl.className = statusData.status === 'running' ?
+                            'badge bg-emerald-500/20 text-emerald-400 border-emerald-500/30' :
+                            'badge bg-red-500/20 text-red-400 border-red-500/30';
+                    }
+                }
+
+                // Update bucket count
+                if (bucketsData && bucketsData.buckets) {
+                    const bucketCount = bucketsData.buckets.length;
+                    let objectCount = 0;
+                    bucketsData.buckets.forEach(b => {
+                        objectCount += (b.objectCount || 0);
+                    });
+                    document.getElementById('storage-buckets').textContent = bucketCount.toLocaleString();
+                    document.getElementById('storage-objects').textContent = objectCount.toLocaleString();
+                }
+
+                // Parse Prometheus metrics
+                const text = metricsText;
 
                 // Storage metrics
-                const storageBytes = parseMetric(text, 'openendpoint_storage_bytes_stored');
-                const storageObjects = parseMetric(text, 'openendpoint_storage_objects_total');
-                const storageBuckets = parseMetric(text, 'openendpoint_storage_buckets_total');
-                const diskUsage = parseMetric(text, 'openendpoint_storage_disk_usage_percent');
+                const storageBytes = parseMetric(text, 'openendpoint_storage_bytes_stored') || 0;
+                const storageObjects = parseMetric(text, 'openendpoint_storage_objects_total') || 0;
+                const diskUsage = parseMetric(text, 'openendpoint_storage_disk_usage_percent') || 0;
 
                 document.getElementById('storage-bytes').textContent = formatBytes(storageBytes);
-                document.getElementById('storage-objects').textContent = storageObjects !== null ? Math.floor(storageObjects).toLocaleString() : '-';
-                document.getElementById('storage-buckets').textContent = storageBuckets !== null ? Math.floor(storageBuckets).toLocaleString() : '-';
-                document.getElementById('disk-usage').textContent = diskUsage !== null ? diskUsage.toFixed(1) + '%' : '-';
+                document.getElementById('storage-objects').textContent = storageObjects !== null ? Math.floor(storageObjects).toLocaleString() : '0';
+                document.getElementById('disk-usage').textContent = diskUsage !== null ? diskUsage.toFixed(1) + '%' : '0%';
 
                 // Request metrics
-                const activeRequests = parseMetric(text, 'openendpoint_requests_active');
-                const totalOps = parseMetric(text, 'openendpoint_operations_total');
-                const failedRequests = parseMetric(text, 'openendpoint_requests_failed_total');
+                const activeRequests = parseMetric(text, 'openendpoint_requests_active') || 0;
+                const totalOps = parseMetric(text, 'openendpoint_operations_total') || 0;
+                const failedRequests = parseMetric(text, 'openendpoint_requests_failed_total') || 0;
 
-                document.getElementById('active-requests').textContent = activeRequests !== null ? Math.floor(activeRequests).toLocaleString() : '-';
-                document.getElementById('total-ops').textContent = totalOps !== null ? Math.floor(totalOps).toLocaleString() : '-';
-                document.getElementById('failed-requests').textContent = failedRequests !== null ? Math.floor(failedRequests).toLocaleString() : '-';
+                document.getElementById('active-requests').textContent = activeRequests !== null ? Math.floor(activeRequests).toLocaleString() : '0';
+                document.getElementById('total-ops').textContent = totalOps !== null ? Math.floor(totalOps).toLocaleString() : '0';
+                document.getElementById('failed-requests').textContent = failedRequests !== null ? Math.floor(failedRequests).toLocaleString() : '0';
 
                 // S3 operations - get counters
                 const opsGet = parseMetric(text, 'openendpoint_s3_requests_total{operation="GetObject"}') ||
-                              parseMetric(text, 'openendpoint_s3_requests_total{operation="get"}');
+                              parseMetric(text, 'openendpoint_s3_requests_total{operation="get"}') || 0;
                 const opsPut = parseMetric(text, 'openendpoint_s3_requests_total{operation="PutObject"}') ||
-                              parseMetric(text, 'openendpoint_s3_requests_total{operation="put"}');
+                              parseMetric(text, 'openendpoint_s3_requests_total{operation="put"}') || 0;
                 const opsDelete = parseMetric(text, 'openendpoint_s3_requests_total{operation="DeleteObject"}') ||
-                                parseMetric(text, 'openendpoint_s3_requests_total{operation="delete"}');
+                                parseMetric(text, 'openendpoint_s3_requests_total{operation="delete"}') || 0;
                 const opsList = parseMetric(text, 'openendpoint_s3_requests_total{operation="ListObjects"}') ||
-                              parseMetric(text, 'openendpoint_s3_requests_total{operation="list"}');
+                              parseMetric(text, 'openendpoint_s3_requests_total{operation="list"}') || 0;
                 const opsHead = parseMetric(text, 'openendpoint_s3_requests_total{operation="HeadObject"}') ||
-                              parseMetric(text, 'openendpoint_s3_requests_total{operation="head"}');
+                              parseMetric(text, 'openendpoint_s3_requests_total{operation="head"}') || 0;
 
-                document.getElementById('ops-get').textContent = opsGet !== null ? Math.floor(opsGet).toLocaleString() : '0';
-                document.getElementById('ops-put').textContent = opsPut !== null ? Math.floor(opsPut).toLocaleString() : '0';
-                document.getElementById('ops-delete').textContent = opsDelete !== null ? Math.floor(opsDelete).toLocaleString() : '0';
-                document.getElementById('ops-list').textContent = opsList !== null ? Math.floor(opsList).toLocaleString() : '0';
-                document.getElementById('ops-head').textContent = opsHead !== null ? Math.floor(opsHead).toLocaleString() : '0';
+                document.getElementById('ops-get').textContent = Math.floor(opsGet).toLocaleString();
+                document.getElementById('ops-put').textContent = Math.floor(opsPut).toLocaleString();
+                document.getElementById('ops-delete').textContent = Math.floor(opsDelete).toLocaleString();
+                document.getElementById('ops-list').textContent = Math.floor(opsList).toLocaleString();
+                document.getElementById('ops-head').textContent = Math.floor(opsHead).toLocaleString();
 
                 // Durations (histogram sums)
-                const durGet = parseMetric(text, 'openendpoint_operation_duration_seconds_sum{operation="GetObject"}');
-                const durPut = parseMetric(text, 'openendpoint_operation_duration_seconds_sum{operation="PutObject"}');
-                const durDelete = parseMetric(text, 'openendpoint_operation_duration_seconds_sum{operation="DeleteObject"}');
-                const durList = parseMetric(text, 'openendpoint_operation_duration_seconds_sum{operation="ListObjects"}');
+                const durGet = parseMetric(text, 'openendpoint_operation_duration_seconds_sum{operation="GetObject"}') || 0;
+                const durPut = parseMetric(text, 'openendpoint_operation_duration_seconds_sum{operation="PutObject"}') || 0;
+                const durDelete = parseMetric(text, 'openendpoint_operation_duration_seconds_sum{operation="DeleteObject"}') || 0;
+                const durList = parseMetric(text, 'openendpoint_operation_duration_seconds_sum{operation="ListObjects"}') || 0;
 
                 // Get counts to calculate averages
                 const countGet = parseMetric(text, 'openendpoint_operation_duration_seconds_count{operation="GetObject"}') || 1;
@@ -454,6 +708,32 @@
                 document.getElementById('dur-delete').textContent = formatDuration(durDelete / countDelete);
                 document.getElementById('dur-list').textContent = formatDuration(durList / countList);
 
+                // Calculate rates
+                const now = Date.now();
+                const elapsed = (now - lastMetrics.timestamp) / 1000;
+                if (elapsed > 0) {
+                    const requestsDelta = totalOps - lastMetrics.requestsTotal;
+                    const requestsPerSec = Math.max(0, requestsDelta / elapsed);
+
+                    const bytesInDelta = opsPut - lastMetrics.bytesUploaded;
+                    const kbpsIn = Math.max(0, bytesInDelta / 1024 / elapsed);
+
+                    const bytesOutDelta = opsGet - lastMetrics.bytesDownloaded;
+                    const kbpsOut = Math.max(0, bytesOutDelta / 1024 / elapsed);
+
+                    updateHistory(requestsPerSec, kbpsIn, kbpsOut);
+
+                    lastMetrics = {
+                        requestsTotal: totalOps,
+                        bytesUploaded: opsPut,
+                        bytesDownloaded: opsGet,
+                        timestamp: now
+                    };
+                }
+
+                // Update charts
+                updateCharts(storageBytes, storageObjects, activeRequests, totalOps);
+
                 loading.style.display = 'none';
                 grid.style.display = 'grid';
             } catch (err) {
@@ -463,9 +743,12 @@
             }
         }
 
-        // Auto-refresh every 30 seconds
+        // Initialize charts
+        initCharts();
+
+        // Auto-refresh every 5 seconds for real-time feel
         refreshMetrics();
-        setInterval(refreshMetrics, 30000);
+        setInterval(refreshMetrics, 5000);
     </script>
 </body>
 </html>

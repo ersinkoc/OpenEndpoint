@@ -341,7 +341,7 @@ func (f *FlatFile) Head(ctx context.Context, bucket, key string) (*storage.Objec
 	}, nil
 }
 
-func (f *FlatFile) List(ctx context.Context, bucket, prefix string, opts storage.ListOptions) ([]storage.ObjectInfo, error) {
+func (f *FlatFile) List(ctx context.Context, bucket, prefix string, opts storage.ListOptions) (*storage.ListResult, error) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 
@@ -354,6 +354,10 @@ func (f *FlatFile) List(ctx context.Context, bucket, prefix string, opts storage
 		}
 		return nil, fmt.Errorf("failed to stat bucket: %w", err)
 	}
+
+	// Track common prefixes when delimiter is used
+	var commonPrefixes []string
+	commonPrefixSet := make(map[string]bool)
 
 	// Walk the directory tree
 	var objects []storage.ObjectInfo
@@ -394,7 +398,13 @@ func (f *FlatFile) List(ctx context.Context, bucket, prefix string, opts storage
 			// Check if this is a "directory" level
 			afterPrefix := strings.TrimPrefix(relPath, prefix)
 			if idx := strings.Index(afterPrefix, opts.Delimiter); idx >= 0 {
-				// This is a common prefix, skip the actual file
+				// This is a common prefix - extract the folder part
+				folderPart := relPath[:len(prefix)+idx+len(opts.Delimiter)]
+				if !commonPrefixSet[folderPart] {
+					commonPrefixSet[folderPart] = true
+					commonPrefixes = append(commonPrefixes, folderPart)
+				}
+				// Skip the actual file
 				return nil
 			}
 		}
@@ -426,7 +436,13 @@ func (f *FlatFile) List(ctx context.Context, bucket, prefix string, opts storage
 		return objects[i].Key < objects[j].Key
 	})
 
-	return objects, nil
+	// Sort common prefixes
+	sort.Strings(commonPrefixes)
+
+	return &storage.ListResult{
+		Objects:       objects,
+		CommonPrefixes: commonPrefixes,
+	}, nil
 }
 
 func (f *FlatFile) CreateBucket(ctx context.Context, bucket string) error {

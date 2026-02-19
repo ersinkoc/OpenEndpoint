@@ -1,4 +1,4 @@
-package select
+package s3select
 
 import (
 	"context"

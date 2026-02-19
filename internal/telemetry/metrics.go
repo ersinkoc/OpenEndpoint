@@ -141,6 +141,21 @@ func DecStorageBytes(bytes int64) {
 	StorageBytesStored.Sub(float64(bytes))
 }
 
+// SetStorageObjects sets the total number of objects
+func SetStorageObjects(count int64) {
+	StorageObjectsTotal.Set(float64(count))
+}
+
+// SetStorageBuckets sets the total number of buckets
+func SetStorageBuckets(count int64) {
+	StorageBucketsTotal.Set(float64(count))
+}
+
+// SetStorageDiskUsage sets the disk usage percentage
+func SetStorageDiskUsage(percent float64) {
+	StorageDiskUsagePercent.Set(percent)
+}
+
 // IncBucketObjects increments object count for a bucket
 func IncBucketObjects(bucket string) {
 	BucketObjects.WithLabelValues(bucket).Inc()
@@ -154,4 +169,10 @@ func DecBucketObjects(bucket string) {
 // SetBucketBytes sets bytes for a bucket
 func SetBucketBytes(bucket string, bytes int64) {
 	BucketBytes.WithLabelValues(bucket).Set(float64(bytes))
+}
+
+// DeleteBucketMetrics removes metrics for a deleted bucket
+func DeleteBucketMetrics(bucket string) {
+	BucketObjects.DeleteLabelValues(bucket)
+	BucketBytes.DeleteLabelValues(bucket)
 }

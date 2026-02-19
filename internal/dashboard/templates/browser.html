@@ -5,8 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>S3 Browser - OpenEndpoint</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lucide-static@0.468.0/font/lucide.min.css">
     <script>
         tailwind.config = {
+            darkMode: 'class',
             theme: {
                 extend: {
                     colors: {
@@ -39,64 +41,93 @@
                             DEFAULT: "hsl(var(--card))",
                             foreground: "hsl(var(--card-foreground))",
                         },
+                        success: {
+                            DEFAULT: "hsl(142 70% 45%)",
+                            foreground: "hsl(142 70% 95%)",
+                        },
                     },
                     borderRadius: {
                         lg: "var(--radius)",
                         md: "calc(var(--radius) - 2px)",
                         sm: "calc(var(--radius) - 4px)",
                     },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
                 }
             }
         }
     </script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
         :root {
-            --background: 222 47% 11%;
+            --background: 222 47% 6%;
             --foreground: 210 40% 98%;
-            --card: 222 47% 14%;
+            --card: 222 47% 8%;
             --card-foreground: 210 40% 98%;
-            --primary: 239 84% 67%;
+            --primary: 212 100% 50%;
             --primary-foreground: 210 40% 98%;
-            --secondary: 263 70% 50%;
+            --secondary: 217 33% 17%;
             --secondary-foreground: 210 40% 98%;
             --muted: 217 33% 17%;
             --muted-foreground: 215 20% 65%;
-            --accent: 263 70% 50%;
+            --accent: 217 33% 17%;
             --accent-foreground: 210 40% 98%;
-            --destructive: 0 63% 31%;
+            --destructive: 0 84% 50%;
             --destructive-foreground: 210 40% 98%;
-            --border: 217 33% 25%;
+            --border: 217 33% 17%;
             --input: 217 33% 17%;
-            --ring: 239 84% 67%;
-            --radius: 0.75rem;
+            --ring: 212 100% 50%;
+            --radius: 0.5rem;
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
         body {
-            font-family: 'Inter', sans-serif;
-            background: linear-gradient(135deg, hsl(222, 47%, 11%) 0%, hsl(263, 70%, 10%) 50%, hsl(270, 50%, 8%) 100%);
+            font-family: 'Inter', system-ui, sans-serif;
+            background: #0a0a0a;
+            color: #fafafa;
             min-height: 100vh;
-            color: hsl(var(--foreground));
         }
 
-        ::-webkit-scrollbar { width: 8px; }
-        ::-webkit-scrollbar-track { background: hsl(var(--muted)); border-radius: 4px; }
-        ::-webkit-scrollbar-thumb { background: hsl(var(--primary)); border-radius: 4px; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #171717; }
+        ::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #444; }
 
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
+        .glass {
+            background: rgba(24, 24, 27, 0.8);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255,255,255,0.08);
         }
 
-        .animate-fade-in { animation: fadeIn 0.5s ease-out forwards; }
+        .sidebar {
+            background: linear-gradient(180deg, #0f0f0f 0%, #0a0a0a 100%);
+            border-right: 1px solid #27272a;
+        }
 
-        .card {
-            background: hsl(var(--card));
-            border: 1px solid hsl(var(--border));
-            border-radius: var(--radius);
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.625rem 0.75rem;
+            border-radius: 0.5rem;
+            color: #a1a1aa;
+            font-size: 0.875rem;
+            font-weight: 500;
+            transition: all 0.15s ease;
+        }
+
+        .nav-item:hover {
+            background: rgba(255,255,255,0.05);
+            color: #fafafa;
+        }
+
+        .nav-item.active {
+            background: rgba(59, 130, 246, 0.1);
+            color: #3b82f6;
         }
 
         .btn {
@@ -104,72 +135,79 @@
             align-items: center;
             justify-content: center;
             gap: 0.5rem;
-            padding: 0.75rem 1.5rem;
-            border-radius: var(--radius);
-            font-weight: 600;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
             font-size: 0.875rem;
-            transition: all 0.2s ease;
+            font-weight: 500;
+            transition: all 0.15s ease;
             cursor: pointer;
             border: none;
             text-decoration: none;
         }
 
         .btn-primary {
-            background: hsl(var(--primary));
-            color: hsl(var(--primary-foreground));
+            background: #3b82f6;
+            color: white;
         }
 
         .btn-primary:hover {
-            background: hsl(var(--primary) / 0.9);
+            background: #2563eb;
         }
 
-        .btn-outline {
+        .btn-secondary {
+            background: #27272a;
+            color: #fafafa;
+            border: 1px solid #3f3f46;
+        }
+
+        .btn-secondary:hover {
+            background: #3f3f46;
+        }
+
+        .btn-ghost {
             background: transparent;
-            border: 1px solid hsl(var(--border));
-            color: hsl(var(--foreground));
+            color: #a1a1aa;
         }
 
-        .btn-outline:hover {
-            background: hsl(var(--accent) / 0.1);
-            border-color: hsl(var(--primary));
+        .btn-ghost:hover {
+            background: rgba(255,255,255,0.05);
+            color: #fafafa;
         }
 
         .btn-danger {
-            background: hsl(var(--destructive));
-            color: hsl(var(--destructive-foreground));
+            background: #dc2626;
+            color: white;
         }
 
         .btn-danger:hover {
-            background: hsl(var(--destructive) / 0.9);
+            background: #b91c1c;
         }
 
-        .btn-sm {
-            padding: 0.5rem 1rem;
-            font-size: 0.8rem;
+        .input {
+            width: 100%;
+            padding: 0.625rem 0.875rem;
+            background: #18181b;
+            border: 1px solid #27272a;
+            border-radius: 0.5rem;
+            color: #fafafa;
+            font-size: 0.875rem;
+            transition: all 0.15s ease;
         }
 
-        .glass {
-            background: hsl(var(--card) / 0.8);
-            backdrop-filter: blur(20px);
-            border: 1px solid hsl(var(--border) / 0.5);
+        .input:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 2px rgba(59,130,246,0.2);
         }
 
-        .text-gradient {
-            background: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--secondary)) 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-
-        .bg-grid {
-            background-image:
-                linear-gradient(hsl(var(--primary) / 0.03) 1px, transparent 1px),
-                linear-gradient(90deg, hsl(var(--primary) / 0.03) 1px, transparent 1px);
-            background-size: 50px 50px;
+        .input::placeholder {
+            color: #71717a;
         }
 
         .table-container {
-            overflow-x: auto;
+            border: 1px solid #27272a;
+            border-radius: 0.75rem;
+            overflow: hidden;
         }
 
         table {
@@ -177,267 +215,428 @@
             border-collapse: collapse;
         }
 
-        th, td {
-            padding: 12px 16px;
-            text-align: left;
-            border-bottom: 1px solid hsl(var(--border));
-        }
-
         th {
-            background: hsl(var(--muted));
-            font-weight: 600;
-            color: hsl(var(--muted-foreground));
+            background: #18181b;
+            padding: 0.75rem 1rem;
+            text-align: left;
             font-size: 0.75rem;
+            font-weight: 600;
+            color: #71717a;
             text-transform: uppercase;
             letter-spacing: 0.05em;
+            border-bottom: 1px solid #27272a;
+        }
+
+        td {
+            padding: 0.75rem 1rem;
+            font-size: 0.875rem;
+            border-bottom: 1px solid #27272a;
+        }
+
+        tr:last-child td {
+            border-bottom: none;
         }
 
         tr:hover {
-            background: hsl(var(--muted) / 0.5);
+            background: rgba(255,255,255,0.02);
         }
 
-        .badge {
-            display: inline-flex;
+        .bucket-item {
+            display: flex;
             align-items: center;
-            gap: 0.375rem;
-            padding: 0.25rem 0.75rem;
-            border-radius: 9999px;
-            font-size: 0.75rem;
-            font-weight: 600;
+            gap: 0.75rem;
+            padding: 0.625rem 0.75rem;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            transition: all 0.15s ease;
         }
 
-        .badge-success {
-            background: hsl(142 71% 45% / 0.15);
-            color: hsl(142 71% 65%);
+        .bucket-item:hover {
+            background: rgba(255,255,255,0.05);
         }
 
-        .badge-warning {
-            background: hsl(38 92% 50% / 0.15);
-            color: hsl(38 92% 70%);
+        .bucket-item.active {
+            background: rgba(59, 130, 246, 0.15);
         }
 
-        .modal {
+        .drop-zone {
+            border: 2px dashed #3f3f46;
+            border-radius: 0.75rem;
+            padding: 3rem;
+            text-align: center;
+            transition: all 0.2s ease;
+            cursor: pointer;
+        }
+
+        .drop-zone:hover, .drop-zone.dragover {
+            border-color: #3b82f6;
+            background: rgba(59, 130, 246, 0.05);
+        }
+
+        .modal-overlay {
             position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.7);
+            inset: 0;
+            background: rgba(0, 0, 0, 0.8);
             display: flex;
             align-items: center;
             justify-content: center;
-            z-index: 100;
+            z-index: 50;
         }
 
-        .modal-content {
-            background: hsl(var(--card));
-            border: 1px solid hsl(var(--border));
-            border-radius: var(--radius);
-            padding: 24px;
-            max-width: 500px;
-            width: 90%;
-            max-height: 90vh;
-            overflow-y: auto;
-        }
-
-        .input {
+        .modal {
+            background: #18181b;
+            border: 1px solid #27272a;
+            border-radius: 0.75rem;
             width: 100%;
-            padding: 0.75rem;
-            background: hsl(var(--input));
-            border: 1px solid hsl(var(--border));
-            border-radius: var(--radius);
-            color: hsl(var(--foreground));
+            max-width: 28rem;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+
+        .modal-header {
+            padding: 1.25rem;
+            border-bottom: 1px solid #27272a;
+        }
+
+        .modal-body {
+            padding: 1.25rem;
+        }
+
+        .modal-footer {
+            padding: 1.25rem;
+            border-top: 1px solid #27272a;
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.75rem;
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 1.5rem;
+            right: 1.5rem;
+            padding: 0.75rem 1rem;
+            border-radius: 0.5rem;
             font-size: 0.875rem;
+            font-weight: 500;
+            z-index: 100;
+            animation: slideIn 0.2s ease;
         }
 
-        .input:focus {
-            outline: none;
-            border-color: hsl(var(--ring));
-            box-shadow: 0 0 0 2px hsl(var(--ring) / 0.2);
+        @keyframes slideIn {
+            from { transform: translateY(100%); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
         }
 
-        .loading {
-            text-align: center;
-            padding: 40px;
-            color: hsl(var(--muted-foreground));
+        .icon {
+            width: 1rem;
+            height: 1rem;
+        }
+
+        .icon-lg {
+            width: 1.25rem;
+            height: 1.25rem;
         }
 
         .breadcrumb {
             display: flex;
             align-items: center;
-            gap: 0.5rem;
+            gap: 0.25rem;
             font-size: 0.875rem;
-            margin-bottom: 1rem;
         }
 
         .breadcrumb-item {
-            color: hsl(var(--muted-foreground));
+            color: #71717a;
             cursor: pointer;
         }
 
         .breadcrumb-item:hover {
-            color: hsl(var(--primary));
+            color: #fafafa;
         }
 
         .breadcrumb-separator {
-            color: hsl(var(--muted-foreground));
+            color: #3f3f46;
         }
 
-        .object-icon {
-            width: 32px;
-            height: 32px;
+        .empty-state {
             display: flex;
+            flex-direction: column;
             align-items: center;
             justify-content: center;
-            font-size: 1.25rem;
-        }
-
-        .drop-zone {
-            border: 2px dashed hsl(var(--border));
-            border-radius: var(--radius);
-            padding: 40px;
+            padding: 4rem 2rem;
             text-align: center;
-            cursor: pointer;
-            transition: all 0.2s ease;
         }
 
-        .drop-zone:hover, .drop-zone.dragover {
-            border-color: hsl(var(--primary));
-            background: hsl(var(--primary) / 0.05);
+        .empty-state-icon {
+            width: 4rem;
+            height: 4rem;
+            margin-bottom: 1rem;
+            color: #3f3f46;
         }
 
-        .toast {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            padding: 12px 20px;
-            border-radius: var(--radius);
-            color: white;
+        .spinner {
+            width: 1.5rem;
+            height: 1.5rem;
+            border: 2px solid #27272a;
+            border-top-color: #3b82f6;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.125rem 0.5rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
             font-weight: 500;
-            z-index: 200;
-            animation: slideIn 0.3s ease;
         }
 
-        .toast-success { background: hsl(142 71% 45%); }
-        .toast-error { background: hsl(0 63% 50%); }
+        .badge-blue {
+            background: rgba(59, 130, 246, 0.15);
+            color: #60a5fa;
+        }
 
-        @keyframes slideIn {
-            from { transform: translateX(100%); opacity: 0; }
-            to { transform: translateX(0); opacity: 1; }
+        .badge-green {
+            background: rgba(34, 197, 94, 0.15);
+            color: #4ade80;
+        }
+
+        .badge-red {
+            background: rgba(239, 68, 68, 0.15);
+            color: #f87171;
+        }
+
+        .tooltip {
+            position: relative;
+        }
+
+        .tooltip::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 0.375rem 0.625rem;
+            background: #27272a;
+            border-radius: 0.375rem;
+            font-size: 0.75rem;
+            white-space: nowrap;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.15s ease;
+        }
+
+        .tooltip:hover::after {
+            opacity: 1;
+        }
+
+        .progress-bar {
+            height: 0.5rem;
+            background: #27272a;
+            border-radius: 9999px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+            border-radius: 9999px;
+            transition: width 0.3s ease;
+        }
+
+        .object-row {
+            cursor: pointer;
+        }
+
+        .object-row:hover {
+            background: rgba(59, 130, 246, 0.05) !important;
         }
     </style>
 </head>
-<body class="min-h-screen bg-grid">
-    <div class="container mx-auto max-w-7xl px-6 py-8">
-
-        <!-- Header -->
-        <header class="card p-6 mb-6 animate-fade-in">
-            <div class="flex items-center justify-between">
-                <div class="flex items-center gap-4">
-                    <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center text-white text-xl font-bold">
-                        OE
+<body class="antialiased">
+    <div class="flex h-screen">
+        <!-- Sidebar -->
+        <aside class="sidebar w-64 flex flex-col">
+            <!-- Logo -->
+            <div class="p-4 border-b border-zinc-800">
+                <div class="flex items-center gap-3">
+                    <div class="w-9 h-9 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+                        <span class="text-white font-bold text-sm">OE</span>
                     </div>
                     <div>
-                        <h1 class="text-2xl font-extrabold text-gradient">S3 Browser</h1>
-                        <p class="text-sm text-muted-foreground">Manage buckets and objects</p>
+                        <h1 class="font-semibold text-white">OpenEndpoint</h1>
+                        <p class="text-xs text-zinc-500">S3 Compatible Storage</p>
                     </div>
                 </div>
-                <div class="flex gap-2">
-                    <button onclick="showCreateBucketModal()" class="btn btn-primary">
-                        <span>+</span> New Bucket
+            </div>
+
+            <!-- Navigation -->
+            <nav class="p-3 space-y-1">
+                <a href="/_dashboard/" class="nav-item">
+                    <i data-lucide="layout-dashboard" class="icon-lg"></i>
+                    Dashboard
+                </a>
+                <a href="/_dashboard/browser" class="nav-item active">
+                    <i data-lucide="box" class="icon-lg"></i>
+                    S3 Browser
+                </a>
+                <a href="/_dashboard/metrics" class="nav-item">
+                    <i data-lucide="bar-chart-3" class="icon-lg"></i>
+                    Metrics
+                </a>
+                <a href="/_dashboard/cluster" class="nav-item">
+                    <i data-lucide="network" class="icon-lg"></i>
+                    Cluster
+                </a>
+                <a href="/_mgmt/" class="nav-item">
+                    <i data-lucide="code" class="icon-lg"></i>
+                    API
+                </a>
+            </nav>
+
+            <!-- Buckets List -->
+            <div class="flex-1 overflow-y-auto p-3 border-t border-zinc-800">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Buckets</h3>
+                    <button onclick="showCreateBucketModal()" class="p-1 rounded hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors">
+                        <i data-lucide="plus" class="w-4 h-4"></i>
                     </button>
                 </div>
-            </div>
-        </header>
-
-        <!-- Navigation -->
-        <nav class="glass rounded-xl p-2 mb-6 flex gap-2 flex-wrap">
-            <a href="/_dashboard/" class="btn btn-outline flex-1">Dashboard</a>
-            <a href="/_dashboard/browser" class="btn btn-primary flex-1">S3 Browser</a>
-            <a href="/_dashboard/metrics" class="btn btn-outline flex-1">Metrics</a>
-            <a href="/_dashboard/cluster" class="btn btn-outline flex-1">Cluster</a>
-            <a href="/_mgmt/" class="btn btn-outline flex-1">API</a>
-        </nav>
-
-        <!-- Breadcrumb -->
-        <div class="breadcrumb" id="breadcrumb">
-            <span class="breadcrumb-item" onclick="navigateToBucket(null)">All Buckets</span>
-        </div>
-
-        <!-- Main Content -->
-        <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
-            <!-- Buckets Sidebar -->
-            <div class="lg:col-span-1">
-                <div class="card p-4">
-                    <h3 class="font-semibold text-white mb-4">Buckets</h3>
-                    <div id="buckets-list" class="space-y-2">
-                        <div class="loading">Loading...</div>
+                <div id="buckets-list" class="space-y-1">
+                    <div class="text-center py-4">
+                        <div class="spinner mx-auto mb-2"></div>
+                        <p class="text-xs text-zinc-500">Loading buckets...</p>
                     </div>
                 </div>
             </div>
 
-            <!-- Objects Panel -->
-            <div class="lg:col-span-3">
+            <!-- Storage Info -->
+            <div class="p-4 border-t border-zinc-800">
+                <div class="space-y-2">
+                    <div class="flex justify-between text-xs">
+                        <span class="text-zinc-500">Storage Used</span>
+                        <span class="text-zinc-400" id="storage-used">--</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="flex-1 flex flex-col overflow-hidden">
+            <!-- Header -->
+            <header class="h-14 border-b border-zinc-800 flex items-center justify-between px-6 bg-zinc-950/50">
+                <div class="flex items-center gap-4">
+                    <h2 class="text-lg font-semibold text-white" id="current-bucket">Select a bucket</h2>
+                    <div class="breadcrumb" id="breadcrumb"></div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button onclick="refreshObjects()" class="btn btn-ghost">
+                        <i data-lucide="rotate-cw" class="w-4 h-4"></i>
+                    </button>
+                    <button onclick="showUploadModal()" id="upload-btn" class="btn btn-primary" style="display: none;">
+                        <i data-lucide="upload" class="w-4 h-4"></i>
+                        Upload
+                    </button>
+                </div>
+            </header>
+
+            <!-- Content Area -->
+            <div class="flex-1 overflow-auto p-6">
                 <!-- Upload Zone -->
-                <div id="upload-zone" class="card p-4 mb-4" style="display: none;">
+                <div id="upload-zone" class="mb-6" style="display: none;">
                     <div class="drop-zone" id="drop-zone">
-                        <div class="text-4xl mb-2">📁</div>
-                        <p class="text-lg font-medium mb-2">Drop files here or click to upload</p>
-                        <p class="text-sm text-muted-foreground">Maximum file size: 10MB</p>
+                        <i data-lucide="cloud-upload" class="w-12 h-12 mx-auto mb-3 text-zinc-500"></i>
+                        <p class="text-zinc-400 mb-1">Drop files here or click to upload</p>
+                        <p class="text-xs text-zinc-600">Maximum file size: 10MB</p>
                         <input type="file" id="file-input" class="hidden" multiple>
                     </div>
                 </div>
 
                 <!-- Objects Table -->
-                <div class="card">
-                    <div class="p-4 border-b border-border flex items-center justify-between">
-                        <h3 class="font-semibold text-white" id="objects-title">Select a bucket</h3>
-                        <div class="flex gap-2" id="bucket-actions" style="display: none;">
-                            <button onclick="refreshObjects()" class="btn btn-outline btn-sm">
-                                🔄 Refresh
-                            </button>
-                            <button onclick="deleteCurrentBucket()" class="btn btn-danger btn-sm">
-                                🗑️ Delete Bucket
-                            </button>
-                        </div>
+                <div class="table-container" id="objects-container">
+                    <div class="empty-state" id="empty-state">
+                        <i data-lucide="folder-open" class="empty-state-icon"></i>
+                        <h3 class="text-lg font-medium text-white mb-1">No bucket selected</h3>
+                        <p class="text-zinc-500 mb-4">Select a bucket from the sidebar to view its contents</p>
                     </div>
-                    <div class="table-container" id="objects-table">
-                        <div class="loading p-8">Select a bucket to view objects</div>
-                    </div>
+                    <table id="objects-table" style="display: none;">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Size</th>
+                                <th>Last Modified</th>
+                                <th>Storage Class</th>
+                                <th class="text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="objects-body">
+                        </tbody>
+                    </table>
                 </div>
             </div>
-        </div>
-
-        <!-- Footer -->
-        <footer class="text-center mt-12 py-6 text-muted-foreground">
-            <p class="text-sm">© 2026 OpenEndpoint. Apache License 2.0</p>
-        </footer>
+        </main>
     </div>
 
     <!-- Create Bucket Modal -->
-    <div id="create-bucket-modal" class="modal" style="display: none;">
-        <div class="modal-content">
-            <h2 class="text-xl font-bold text-white mb-4">Create New Bucket</h2>
-            <div class="space-y-4">
-                <div>
-                    <label class="block text-sm font-medium mb-2">Bucket Name</label>
-                    <input type="text" id="bucket-name-input" class="input" placeholder="my-bucket">
+    <div id="create-bucket-modal" class="modal-overlay" style="display: none;">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="text-lg font-semibold text-white">Create New Bucket</h3>
+            </div>
+            <div class="modal-body">
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-zinc-400 mb-2">Bucket Name</label>
+                        <input type="text" id="bucket-name-input" class="input" placeholder="my-bucket">
+                        <p class="text-xs text-zinc-500 mt-2">Bucket names must be unique and DNS-compliant</p>
+                    </div>
                 </div>
-                <div class="flex gap-2 justify-end">
-                    <button onclick="closeCreateBucketModal()" class="btn btn-outline">Cancel</button>
-                    <button onclick="createBucket()" class="btn btn-primary">Create</button>
+            </div>
+            <div class="modal-footer">
+                <button onclick="closeCreateBucketModal()" class="btn btn-secondary">Cancel</button>
+                <button onclick="createBucket()" class="btn btn-primary">Create Bucket</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Upload Modal -->
+    <div id="upload-modal" class="modal-overlay" style="display: none;">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="text-lg font-semibold text-white">Upload Files</h3>
+            </div>
+            <div class="modal-body">
+                <div class="drop-zone" id="upload-drop-zone">
+                    <i data-lucide="cloud-upload" class="w-12 h-12 mx-auto mb-3 text-zinc-500"></i>
+                    <p class="text-zinc-400 mb-1">Drop files here or click to select</p>
+                    <p class="text-xs text-zinc-600">Maximum file size: 10MB</p>
+                    <input type="file" id="upload-file-input" class="hidden" multiple>
                 </div>
+                <div id="upload-progress" class="mt-4 space-y-2"></div>
+            </div>
+            <div class="modal-footer">
+                <button onclick="closeUploadModal()" class="btn btn-secondary">Close</button>
             </div>
         </div>
     </div>
 
     <!-- Delete Confirmation Modal -->
-    <div id="delete-modal" class="modal" style="display: none;">
-        <div class="modal-content">
-            <h2 class="text-xl font-bold text-white mb-4" id="delete-title">Confirm Delete</h2>
-            <p class="text-muted-foreground mb-4" id="delete-message">Are you sure you want to delete this item?</p>
-            <div class="flex gap-2 justify-end">
-                <button onclick="closeDeleteModal()" class="btn btn-outline">Cancel</button>
+    <div id="delete-modal" class="modal-overlay" style="display: none;">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="text-lg font-semibold text-white" id="delete-title">Confirm Delete</h3>
+            </div>
+            <div class="modal-body">
+                <p class="text-zinc-400" id="delete-message">Are you sure you want to delete this item?</p>
+            </div>
+            <div class="modal-footer">
+                <button onclick="closeDeleteModal()" class="btn btn-secondary">Cancel</button>
                 <button onclick="confirmDelete()" class="btn btn-danger">Delete</button>
             </div>
         </div>
@@ -446,12 +645,15 @@
     <!-- Toast -->
     <div id="toast" class="toast" style="display: none;"></div>
 
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
     <script>
+        lucide.createIcons();
+
         let currentBucket = null;
         let currentPrefix = '';
         let deleteTarget = null;
 
-        // Load buckets on page load
+        // Initialize
         loadBuckets();
 
         async function loadBuckets() {
@@ -462,25 +664,26 @@
                 const buckets = data.buckets || [];
 
                 if (buckets.length === 0) {
-                    container.innerHTML = '<p class="text-muted-foreground text-sm">No buckets yet</p>';
+                    container.innerHTML = `
+                        <p class="text-xs text-zinc-500 text-center py-4">No buckets yet</p>
+                    `;
                     return;
                 }
 
                 container.innerHTML = buckets.map(bucket => `
-                    <div class="flex items-center justify-between p-2 rounded-lg hover:bg-muted cursor-pointer ${currentBucket === bucket.Name ? 'bg-muted' : ''}"
+                    <div class="bucket-item group ${currentBucket === bucket.Name ? 'active' : ''}"
                          onclick="navigateToBucket('${bucket.Name}')">
-                        <div class="flex items-center gap-2">
-                            <span>📦</span>
-                            <span class="font-medium truncate">${bucket.Name}</span>
-                        </div>
+                        <i data-lucide="folder" class="w-4 h-4 text-zinc-500"></i>
+                        <span class="flex-1 truncate text-sm">${bucket.Name}</span>
                         <button onclick="event.stopPropagation(); deleteBucket('${bucket.Name}')"
-                                class="text-muted-foreground hover:text-red-400 p-1">
-                            🗑️
+                                class="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-zinc-800 text-zinc-500 hover:text-red-400 transition-all">
+                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
                         </button>
                     </div>
                 `).join('');
+                lucide.createIcons();
             } catch (error) {
-                container.innerHTML = '<p class="text-red-400 text-sm">Failed to load buckets</p>';
+                container.innerHTML = `<p class="text-xs text-red-400 text-center py-4">Failed to load</p>`;
             }
         }
 
@@ -488,38 +691,40 @@
             currentBucket = bucket;
             currentPrefix = '';
 
+            // Update UI
+            document.getElementById('current-bucket').textContent = bucket || 'Select a bucket';
+            document.getElementById('upload-btn').style.display = bucket ? 'flex' : 'none';
+            document.getElementById('upload-zone').style.display = bucket ? 'block' : 'none';
+
             // Update breadcrumb
             const breadcrumb = document.getElementById('breadcrumb');
-            if (bucket) {
-                breadcrumb.innerHTML = `
-                    <span class="breadcrumb-item" onclick="navigateToBucket(null)">All Buckets</span>
-                    <span class="breadcrumb-separator">/</span>
-                    <span class="text-white">${bucket}</span>
-                `;
-                document.getElementById('upload-zone').style.display = 'block';
-                document.getElementById('bucket-actions').style.display = 'flex';
-                document.getElementById('objects-title').textContent = bucket;
-                loadObjects(bucket, '');
-            } else {
-                breadcrumb.innerHTML = '<span class="breadcrumb-item">All Buckets</span>';
-                document.getElementById('upload-zone').style.display = 'none';
-                document.getElementById('bucket-actions').style.display = 'none';
-                document.getElementById('objects-title').textContent = 'Select a bucket';
-                document.getElementById('objects-table').innerHTML = '<div class="loading p-8">Select a bucket to view objects</div>';
-            }
+            breadcrumb.innerHTML = bucket
+                ? `<span class="breadcrumb-item" onclick="navigateToBucket(null)">Buckets</span><span class="breadcrumb-separator">/</span><span class="text-white">${bucket}</span>`
+                : '';
 
-            loadBuckets();
+            if (bucket) {
+                loadObjects(bucket, '');
+                loadBuckets(); // Refresh sidebar
+            } else {
+                document.getElementById('empty-state').style.display = 'flex';
+                document.getElementById('objects-table').style.display = 'none';
+            }
         }
 
         async function loadObjects(bucket, prefix) {
-            const container = document.getElementById('objects-table');
-            container.innerHTML = '<div class="loading p-8">Loading objects...</div>';
+            const emptyState = document.getElementById('empty-state');
+            const objectsTable = document.getElementById('objects-table');
+
+            emptyState.innerHTML = `
+                <div class="spinner mx-auto mb-3"></div>
+                <p class="text-zinc-500">Loading objects...</p>
+            `;
+            emptyState.style.display = 'flex';
+            objectsTable.style.display = 'none';
 
             try {
                 let url = `/_mgmt/buckets/${bucket}/objects?delimiter=/`;
-                if (prefix) {
-                    url += `&prefix=${encodeURIComponent(prefix)}`;
-                }
+                if (prefix) url += `&prefix=${encodeURIComponent(prefix)}`;
 
                 const response = await fetch(url);
                 const data = await response.json();
@@ -527,52 +732,71 @@
                 const prefixes = data.CommonPrefixes || [];
                 const objects = data.Contents || [];
 
-                let html = '<table><thead><tr>';
-                html += '<th>Name</th><th>Size</th><th>Last Modified</th><th>Actions</th>';
-                html += '</tr></thead><tbody>';
+                if (prefixes.length === 0 && objects.length === 0) {
+                    emptyState.innerHTML = `
+                        <i data-lucide="folder-open" class="empty-state-icon"></i>
+                        <h3 class="text-lg font-medium text-white mb-1">No objects</h3>
+                        <p class="text-zinc-500">This bucket is empty. Upload files to get started.</p>
+                    `;
+                    lucide.createIcons();
+                    return;
+                }
 
-                // Show prefixes (folders)
+                emptyState.style.display = 'none';
+                objectsTable.style.display = 'table';
+
+                let html = '';
+
+                // Folders
                 prefixes.forEach(p => {
                     const folderName = p.Prefix.split('/').slice(-2)[0];
                     html += `
-                        <tr class="cursor-pointer" onclick="navigateToFolder('${p.Prefix}')">
+                        <tr class="object-row" onclick="navigateToFolder('${p.Prefix}')">
                             <td>
-                                <div class="flex items-center gap-2">
-                                    <span class="object-icon">📁</span>
-                                    <span class="font-medium">${folderName}/</span>
+                                <div class="flex items-center gap-3">
+                                    <i data-lucide="folder" class="w-5 h-5 text-blue-400"></i>
+                                    <span class="font-medium text-white">${folderName}/</span>
                                 </div>
                             </td>
-                            <td class="text-muted-foreground">-</td>
-                            <td class="text-muted-foreground">-</td>
-                            <td></td>
+                            <td class="text-zinc-500">-</td>
+                            <td class="text-zinc-500">-</td>
+                            <td><span class="badge badge-blue">Folder</span></td>
+                            <td class="text-right"></td>
                         </tr>
                     `;
                 });
 
-                // Show objects
+                // Objects
                 objects.forEach(obj => {
                     const key = obj.Key;
                     const name = key.split('/').pop();
                     const size = formatBytes(obj.Size);
-                    const modified = obj.LastModified ? new Date(obj.LastModified).toLocaleString() : '-';
+                    const modified = obj.LastModified ? new Date(obj.LastModified).toLocaleDateString() : '-';
 
                     html += `
-                        <tr>
+                        <tr class="object-row">
                             <td>
-                                <div class="flex items-center gap-2">
-                                    <span class="object-icon">📄</span>
-                                    <span class="font-medium">${name}</span>
+                                <div class="flex items-center gap-3">
+                                    <i data-lucide="file" class="w-5 h-5 text-zinc-500"></i>
+                                    <span class="font-medium text-white">${name}</span>
                                 </div>
                             </td>
-                            <td>${size}</td>
-                            <td class="text-muted-foreground">${modified}</td>
-                            <td>
-                                <div class="flex gap-2">
-                                    <button onclick="downloadObject('${bucket}', '${key}')" class="btn btn-outline btn-sm">
-                                        ⬇️
+                            <td class="text-zinc-400 font-mono text-sm">${size}</td>
+                            <td class="text-zinc-500">${modified}</td>
+                            <td><span class="badge badge-green">STANDARD</span></td>
+                            <td class="text-right">
+                                <div class="flex items-center justify-end gap-1">
+                                    <button onclick="event.stopPropagation(); downloadObject('${bucket}', '${key}')"
+                                            class="p-1.5 rounded hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors" title="Download">
+                                        <i data-lucide="download" class="w-4 h-4"></i>
                                     </button>
-                                    <button onclick="deleteObject('${key}')" class="btn btn-danger btn-sm">
-                                        🗑️
+                                    <button onclick="event.stopPropagation(); copyUrl('${bucket}', '${key}')"
+                                            class="p-1.5 rounded hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors" title="Copy URL">
+                                        <i data-lucide="link" class="w-4 h-4"></i>
+                                    </button>
+                                    <button onclick="event.stopPropagation(); deleteObject('${key}')"
+                                            class="p-1.5 rounded hover:bg-zinc-800 text-zinc-400 hover:text-red-400 transition-colors" title="Delete">
+                                        <i data-lucide="trash-2" class="w-4 h-4"></i>
                                     </button>
                                 </div>
                             </td>
@@ -580,33 +804,31 @@
                     `;
                 });
 
-                if (prefixes.length === 0 && objects.length === 0) {
-                    html += '<tr><td colspan="4" class="text-center text-muted-foreground">No objects in this folder</td></tr>';
-                }
-
-                html += '</tbody></table>';
-                container.innerHTML = html;
+                document.getElementById('objects-body').innerHTML = html;
+                lucide.createIcons();
             } catch (error) {
-                container.innerHTML = `<div class="loading p-8 text-red-400">Error: ${error.message}</div>`;
+                emptyState.innerHTML = `
+                    <i data-lucide="alert-circle" class="empty-state-icon text-red-400"></i>
+                    <h3 class="text-lg font-medium text-white mb-1">Error</h3>
+                    <p class="text-zinc-500">${error.message}</p>
+                `;
+                lucide.createIcons();
             }
         }
 
         function navigateToFolder(prefix) {
             currentPrefix = prefix;
-            const breadcrumb = document.getElementById('breadcrumb');
-            const parts = prefix.split('/').filter(p => p);
+            const folderName = prefix.split('/').slice(-2)[0];
 
-            let html = `<span class="breadcrumb-item" onclick="navigateToBucket(null)">All Buckets</span>`;
-            let path = '';
-            parts.forEach((part, i) => {
-                path += part + '/';
-                if (i === parts.length - 1) {
-                    html += `<span class="breadcrumb-separator">/</span><span class="text-white">${part}</span>`;
-                } else {
-                    html += `<span class="breadcrumb-separator">/</span><span class="breadcrumb-item" onclick="navigateToFolder('${path}')">${part}</span>`;
-                }
-            });
-            breadcrumb.innerHTML = html;
+            // Update breadcrumb
+            const breadcrumb = document.getElementById('breadcrumb');
+            breadcrumb.innerHTML = `
+                <span class="breadcrumb-item" onclick="navigateToBucket(null)">Buckets</span>
+                <span class="breadcrumb-separator">/</span>
+                <span class="breadcrumb-item" onclick="navigateToBucket('${currentBucket}')">${currentBucket}</span>
+                <span class="breadcrumb-separator">/</span>
+                <span class="text-white">${folderName}</span>
+            `;
 
             loadObjects(currentBucket, prefix);
         }
@@ -622,13 +844,20 @@
             const k = 1024;
             const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
             const i = Math.floor(Math.log(bytes) / Math.log(k));
-            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
         }
 
         function downloadObject(bucket, key) {
             window.open(`/s3/${bucket}/${key}`, '_blank');
         }
 
+        function copyUrl(bucket, key) {
+            const url = `${window.location.origin}/s3/${bucket}/${key}`;
+            navigator.clipboard.writeText(url);
+            showToast('URL copied to clipboard', 'success');
+        }
+
+        // Modal functions
         function showCreateBucketModal() {
             document.getElementById('create-bucket-modal').style.display = 'flex';
             document.getElementById('bucket-name-input').focus();
@@ -640,7 +869,7 @@
         }
 
         async function createBucket() {
-            const name = document.getElementById('bucket-name-input').value.trim();
+            const name = document.getElementById('bucket-name-input').value.trim().toLowerCase();
             if (!name) {
                 showToast('Please enter a bucket name', 'error');
                 return;
@@ -666,10 +895,19 @@
             }
         }
 
+        function showUploadModal() {
+            document.getElementById('upload-modal').style.display = 'flex';
+        }
+
+        function closeUploadModal() {
+            document.getElementById('upload-modal').style.display = 'none';
+            document.getElementById('upload-progress').innerHTML = '';
+        }
+
         function deleteBucket(bucket) {
             deleteTarget = { type: 'bucket', bucket };
             document.getElementById('delete-title').textContent = 'Delete Bucket';
-            document.getElementById('delete-message').textContent = `Are you sure you want to delete bucket "${bucket}"? This will delete all objects in the bucket.`;
+            document.getElementById('delete-message').textContent = `Are you sure you want to delete bucket "${bucket}"? All objects will be permanently deleted.`;
             document.getElementById('delete-modal').style.display = 'flex';
         }
 
@@ -678,12 +916,6 @@
             document.getElementById('delete-title').textContent = 'Delete Object';
             document.getElementById('delete-message').textContent = `Are you sure you want to delete "${key}"?`;
             document.getElementById('delete-modal').style.display = 'flex';
-        }
-
-        function deleteCurrentBucket() {
-            if (currentBucket) {
-                deleteBucket(currentBucket);
-            }
         }
 
         function closeDeleteModal() {
@@ -696,9 +928,7 @@
 
             try {
                 if (deleteTarget.type === 'bucket') {
-                    const response = await fetch(`/_mgmt/buckets/${deleteTarget.bucket}`, {
-                        method: 'DELETE'
-                    });
+                    const response = await fetch(`/_mgmt/buckets/${deleteTarget.bucket}`, { method: 'DELETE' });
                     if (!response.ok) {
                         const error = await response.json();
                         throw new Error(error.error || 'Failed to delete bucket');
@@ -706,13 +936,10 @@
                     showToast('Bucket deleted', 'success');
                     if (currentBucket === deleteTarget.bucket) {
                         navigateToBucket(null);
-                    } else {
-                        loadBuckets();
                     }
+                    loadBuckets();
                 } else {
-                    const response = await fetch(`/_mgmt/buckets/${currentBucket}/objects/${encodeURIComponent(deleteTarget.key)}`, {
-                        method: 'DELETE'
-                    });
+                    const response = await fetch(`/_mgmt/buckets/${currentBucket}/objects/${encodeURIComponent(deleteTarget.key)}`, { method: 'DELETE' });
                     if (!response.ok) {
                         const error = await response.json();
                         throw new Error(error.error || 'Failed to delete object');
@@ -727,30 +954,33 @@
             closeDeleteModal();
         }
 
-        // File upload handling
+        // File upload
         const dropZone = document.getElementById('drop-zone');
         const fileInput = document.getElementById('file-input');
+        const uploadDropZone = document.getElementById('upload-drop-zone');
+        const uploadFileInput = document.getElementById('upload-file-input');
 
-        dropZone.addEventListener('click', () => fileInput.click());
+        function setupDropZone(dropZoneEl, inputEl, handler) {
+            dropZoneEl.addEventListener('click', () => inputEl.click());
+            dropZoneEl.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropZoneEl.classList.add('dragover');
+            });
+            dropZoneEl.addEventListener('dragleave', () => {
+                dropZoneEl.classList.remove('dragover');
+            });
+            dropZoneEl.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropZoneEl.classList.remove('dragover');
+                handler(e.dataTransfer.files);
+            });
+            inputEl.addEventListener('change', (e) => {
+                handler(e.target.files);
+            });
+        }
 
-        dropZone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            dropZone.classList.add('dragover');
-        });
-
-        dropZone.addEventListener('dragleave', () => {
-            dropZone.classList.remove('dragover');
-        });
-
-        dropZone.addEventListener('drop', (e) => {
-            e.preventDefault();
-            dropZone.classList.remove('dragover');
-            handleFiles(e.dataTransfer.files);
-        });
-
-        fileInput.addEventListener('change', (e) => {
-            handleFiles(e.target.files);
-        });
+        setupDropZone(dropZone, fileInput, handleFiles);
+        setupDropZone(uploadDropZone, uploadFileInput, handleFiles);
 
         async function handleFiles(files) {
             if (!currentBucket) {
@@ -758,9 +988,28 @@
                 return;
             }
 
+            const progressContainer = document.getElementById('upload-progress');
+            progressContainer.innerHTML = '';
+
             for (const file of files) {
+                const progressEl = document.createElement('div');
+                progressEl.className = 'flex items-center gap-2 text-sm';
+                progressEl.innerHTML = `
+                    <span class="text-zinc-400 truncate flex-1">${file.name}</span>
+                    <div class="spinner w-4 h-4"></div>
+                `;
+                progressContainer.appendChild(progressEl);
+
                 await uploadFile(file);
+                progressEl.innerHTML = `
+                    <i data-lucide="check" class="w-4 h-4 text-green-400"></i>
+                    <span class="text-green-400">${file.name}</span>
+                `;
             }
+
+            lucide.createIcons();
+            refreshObjects();
+            showToast(`Uploaded ${files.length} file(s)`, 'success');
         }
 
         async function uploadFile(file) {
@@ -768,28 +1017,21 @@
             formData.append('file', file);
             formData.append('key', currentPrefix + file.name);
 
-            try {
-                const response = await fetch(`/_mgmt/buckets/${currentBucket}/objects`, {
-                    method: 'POST',
-                    body: formData
-                });
+            const response = await fetch(`/_mgmt/buckets/${currentBucket}/objects`, {
+                method: 'POST',
+                body: formData
+            });
 
-                if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.error || 'Failed to upload');
-                }
-
-                showToast(`Uploaded: ${file.name}`, 'success');
-                refreshObjects();
-            } catch (error) {
-                showToast(`Failed to upload ${file.name}: ${error.message}`, 'error');
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || 'Failed to upload');
             }
         }
 
         function showToast(message, type) {
             const toast = document.getElementById('toast');
             toast.textContent = message;
-            toast.className = `toast toast-${type}`;
+            toast.className = `toast bg-${type === 'success' ? 'green-600' : 'red-600'}`;
             toast.style.display = 'block';
             setTimeout(() => {
                 toast.style.display = 'none';
@@ -801,6 +1043,11 @@
             if (e.key === 'Escape') {
                 closeCreateBucketModal();
                 closeDeleteModal();
+                closeUploadModal();
+            }
+            if (e.key === 'r' && e.ctrlKey) {
+                e.preventDefault();
+                refreshObjects();
             }
         });
     </script>
