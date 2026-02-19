@@ -45,6 +45,9 @@ func Handler(clusterInfo interface {
 	// Serve cluster dashboard
 	mux.HandleFunc("/_dashboard/cluster", clusterHandler(clusterInfo))
 
+	// Serve S3 browser
+	mux.HandleFunc("/_dashboard/browser", s3BrowserHandler)
+
 	return mux
 }
 
@@ -135,4 +138,22 @@ func clusterHandler(clusterInfo interface {
 
 		tmpl.Execute(w, data)
 	}
+}
+
+func s3BrowserHandler(w http.ResponseWriter, r *http.Request) {
+	tmpl, err := template.ParseFS(Templates, "templates/browser.html")
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	data := struct {
+		Title   string
+		Version string
+	}{
+		Title:   "OpenEndpoint S3 Browser",
+		Version: "1.0.0",
+	}
+
+	tmpl.Execute(w, data)
 }

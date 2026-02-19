@@ -1,9 +1,12 @@
 package mgmt
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/openendpoint/openendpoint/internal/cluster"
@@ -65,6 +68,32 @@ func (r *Router) route(w http.ResponseWriter, req *http.Request, path string) {
 		r.handleVersion(w, req)
 	case req.Method == http.MethodGet && path == "/cluster":
 		r.handleCluster(w, req)
+	case req.Method == http.MethodGet && len(path) > 9 && path[:9] == "/buckets/" && strings.Contains(path[9:], "/objects"):
+		// /buckets/{bucket}/objects or /buckets/{bucket}/objects/{prefix}
+		parts := strings.SplitN(path[9:], "/objects", 2)
+		bucket := parts[0]
+		prefix := ""
+		if len(parts) > 1 && parts[1] != "" {
+			prefix = parts[1][1:] // Remove leading /
+		}
+		r.handleListObjects(w, req, bucket, prefix)
+	case req.Method == http.MethodDelete && len(path) > 9 && path[:9] == "/buckets/":
+		// /buckets/{bucket}/objects/{key}
+		rest := path[9:]
+		parts := strings.SplitN(rest, "/objects/", 2)
+		if len(parts) == 2 {
+			bucket := parts[0]
+			key := parts[1]
+			r.handleDeleteObject(w, req, bucket, key)
+			return
+		}
+		r.handleDeleteBucket(w, req, rest)
+	case req.Method == http.MethodPost && len(path) > 9 && path[:9] == "/buckets/" && strings.Contains(path[9:], "/objects"):
+		// Upload object - /buckets/{bucket}/objects
+		parts := strings.SplitN(path[9:], "/objects", 2)
+		bucket := parts[0]
+		r.handleUploadObject(w, req, bucket)
+		return
 
 	default:
 		r.writeError(w, http.StatusNotFound, "Not Found")
@@ -170,6 +199,99 @@ func (r *Router) handleGetBucket(w http.ResponseWriter, req *http.Request, bucke
 	}
 
 	r.writeError(w, http.StatusNotFound, fmt.Sprintf("Bucket not found: %s", bucket))
+}
+
+// handleListObjects lists objects in a bucket
+func (r *Router) handleListObjects(w http.ResponseWriter, req *http.Request, bucket, prefix string) {
+	ctx := req.Context()
+
+	// Get query parameters
+	delimiter := req.URL.Query().Get("delimiter")
+	maxKeys := 1000
+	if maxKeysStr := req.URL.Query().Get("maxKeys"); maxKeysStr != "" {
+		fmt.Sscanf(maxKeysStr, "%d", &maxKeys)
+	}
+
+	result, err := r.engine.ListObjects(ctx, bucket, engine.ListObjectsOptions{
+		Prefix:    prefix,
+		Delimiter: delimiter,
+		MaxKeys:   maxKeys,
+	})
+	if err != nil {
+		r.writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	r.writeJSON(w, http.StatusOK, result)
+}
+
+// handleDeleteObject deletes an object
+func (r *Router) handleDeleteObject(w http.ResponseWriter, req *http.Request, bucket, key string) {
+	ctx := req.Context()
+
+	// URL decode the key
+	key, err := url.PathUnescape(key)
+	if err != nil {
+		r.writeError(w, http.StatusBadRequest, "Invalid object key")
+		return
+	}
+
+	if err := r.engine.DeleteObject(ctx, bucket, key, engine.DeleteObjectOptions{}); err != nil {
+		r.writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	r.writeJSON(w, http.StatusOK, map[string]string{
+		"bucket": bucket,
+		"key":    key,
+	})
+}
+
+// handleUploadObject uploads an object to a bucket
+func (r *Router) handleUploadObject(w http.ResponseWriter, req *http.Request, bucket string) {
+	ctx := req.Context()
+
+	// Parse multipart form
+	if err := req.ParseMultipartForm(10 << 20); err != nil { // 10MB max
+		r.writeError(w, http.StatusBadRequest, "Invalid request: "+err.Error())
+		return
+	}
+
+	file, header, err := req.FormFile("file")
+	if err != nil {
+		r.writeError(w, http.StatusBadRequest, "No file uploaded")
+		return
+	}
+	defer file.Close()
+
+	// Get the key from the form, or use the filename
+	key := req.FormValue("key")
+	if key == "" {
+		key = header.Filename
+	}
+
+	// Read file content
+	content := make([]byte, header.Size)
+	_, err = file.Read(content)
+	if err != nil {
+		r.writeError(w, http.StatusInternalServerError, "Failed to read file")
+		return
+	}
+
+	// Upload to engine
+	_, err = r.engine.PutObject(ctx, bucket, key, bytes.NewReader(content), engine.PutObjectOptions{
+		ContentType: header.Header.Get("Content-Type"),
+	})
+	if err != nil {
+		r.writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	r.writeJSON(w, http.StatusCreated, map[string]interface{}{
+		"bucket": bucket,
+		"key":    key,
+		"size":   header.Size,
+	})
 }
 
 // handleMetrics returns Prometheus metrics
