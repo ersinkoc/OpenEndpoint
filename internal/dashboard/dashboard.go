@@ -190,7 +190,7 @@ func apiMetricsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
 	backend := getBackendURL(r)
-	resp, err := http.Get(backend + "/metrics")
+	resp, err := http.Get(backend + "/_mgmt/metrics/json")
 	if err != nil {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"error": err.Error(),
@@ -199,20 +199,11 @@ func apiMetricsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer resp.Body.Close()
 
-	// Parse Prometheus metrics format (simplified)
-	// In production, you'd use a proper Prometheus parser
-	var metrics struct {
-		RequestsTotal     int64 `json:"requests_total"`
-		BytesUploaded     int64 `json:"bytes_uploaded"`
-		BytesDownloaded   int64 `json:"bytes_downloaded"`
-		AvgRequestSeconds int64 `json:"avg_request_seconds"`
+	var metrics map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&metrics); err != nil {
+		// Fallback to empty metrics
+		metrics = map[string]interface{}{}
 	}
-
-	// Parse the metrics response (simplified)
-	// Real implementation would parse Prometheus format
-	metrics.RequestsTotal = 0
-	metrics.BytesUploaded = 0
-	metrics.BytesDownloaded = 0
 
 	json.NewEncoder(w).Encode(metrics)
 }

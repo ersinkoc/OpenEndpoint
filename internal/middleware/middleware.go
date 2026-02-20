@@ -12,6 +12,33 @@ import (
 	"time"
 )
 
+// gzipResponseWriter wraps an http.ResponseWriter with gzip compression
+type gzipResponseWriter struct {
+	http.ResponseWriter
+	writer *gzip.Writer
+}
+
+// Write implements http.ResponseWriter
+func (g *gzipResponseWriter) Write(b []byte) (int, error) {
+	if g.Header().Get("Content-Type") == "" || strings.HasPrefix(g.Header().Get("Content-Type"), "text/") || strings.HasPrefix(g.Header().Get("Content-Type"), "application/json") {
+		return g.writer.Write(b)
+	}
+	return g.ResponseWriter.Write(b)
+}
+
+// Flush implements http.Flusher
+func (g *gzipResponseWriter) Flush() {
+	g.writer.Flush()
+	if f, ok := g.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// Close closes the gzip writer
+func (g *gzipResponseWriter) Close() error {
+	return g.writer.Close()
+}
+
 // RequestID adds a unique request ID to each request
 func RequestID(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -77,9 +104,16 @@ func Compress(next http.Handler) http.Handler {
 		gw := gzip.NewWriter(w)
 		defer gw.Close()
 
+		// Set content encoding header
 		w.Header().Set("Content-Encoding", "gzip")
 
-		next.ServeHTTP(gw, r)
+		// Use wrapper to make gzip.Writer work as http.ResponseWriter
+		gzw := &gzipResponseWriter{
+			ResponseWriter: w,
+			writer:         gw,
+		}
+
+		next.ServeHTTP(gzw, r)
 	})
 }
 

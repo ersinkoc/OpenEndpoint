@@ -6,49 +6,49 @@ import (
 	"time"
 )
 
-// Policy represents an IAM policy
-type Policy struct {
-	ID          string      `json:"Id"`
-	Name        string      `json:"Name"`
-	Description string      `json:"Description"`
-	Version     string      `json:"Version"`
-	Statements  []Statement `json:"Statement"`
-	CreatedAt   time.Time  `json:"CreatedAt"`
-	UpdatedAt   time.Time  `json:"UpdatedAt"`
+// IAMPolicy represents an IAM policy
+type IAMPolicy struct {
+	ID          string         `json:"Id"`
+	Name        string         `json:"Name"`
+	Description string         `json:"Description"`
+	Version     string         `json:"Version"`
+	Statements  []IAMStatement `json:"Statement"`
+	CreatedAt   time.Time     `json:"CreatedAt"`
+	UpdatedAt   time.Time     `json:"UpdatedAt"`
 }
 
-// Statement represents a policy statement
-type Statement struct {
-	Sid          string         `json:"Sid,omitempty"`
-	Effect       string         `json:"Effect"` // Allow or Deny
-	Principal    *Principal     `json:"Principal,omitempty"`
-	NotPrincipal *Principal     `json:"NotPrincipal,omitempty"`
-	Actions      []string      `json:"Action"`
-	NotActions   []string      `json:"NotAction,omitempty"`
-	Resources    []string      `json:"Resource"`
-	NotResources []string      `json:"NotResource,omitempty"`
-	Condition    *Condition    `json:"Condition,omitempty"`
+// IAMStatement represents a policy statement
+type IAMStatement struct {
+	Sid          string          `json:"Sid,omitempty"`
+	Effect       string          `json:"Effect"` // Allow or Deny
+	Principal    *IAMPrincipal   `json:"Principal,omitempty"`
+	NotPrincipal *IAMPrincipal   `json:"NotPrincipal,omitempty"`
+	Actions      []string        `json:"Action"`
+	NotActions   []string        `json:"NotAction,omitempty"`
+	Resources    []string        `json:"Resource"`
+	NotResources []string        `json:"NotResource,omitempty"`
+	Condition    *IAMCondition  `json:"Condition,omitempty"`
 }
 
-// Principal represents who the policy applies to
-type Principal struct {
+// IAMPrincipal represents who the policy applies to
+type IAMPrincipal struct {
 	AWS     []string `json:"AWS,omitempty"`
 	Service []string `json:"Service,omitempty"`
 }
 
-// Condition represents a policy condition
-type Condition struct {
+// IAMCondition represents a policy condition
+type IAMCondition struct {
 	StringEquals map[string]string `json:"StringEquals,omitempty"`
 	StringLike   map[string]string `json:"StringLike,omitempty"`
-	IpAddress   map[string]string `json:"IpAddress,omitempty"`
-	Numeric     map[string]int    `json:"Numeric,omitempty"`
-	Bool        map[string]bool   `json:"Bool,omitempty"`
-	Null        map[string]bool   `json:"Null,omitempty"`
+	IpAddress    map[string]string `json:"IpAddress,omitempty"`
+	Numeric      map[string]int    `json:"Numeric,omitempty"`
+	Bool         map[string]bool  `json:"Bool,omitempty"`
+	Null         map[string]bool  `json:"Null,omitempty"`
 }
 
-// User represents an IAM user
-type User struct {
-	ID            string    `json:"Id"`
+// IAMUser represents an IAM user
+type IAMUser struct {
+	ID           string    `json:"Id"`
 	AccessKey    string    `json:"AccessKey"`
 	DisplayName  string    `json:"DisplayName"`
 	PolicyArns   []string  `json:"PolicyArns"`
@@ -59,18 +59,18 @@ type User struct {
 
 // PolicyEvaluator evaluates policies
 type PolicyEvaluator struct {
-	policies map[string]*Policy
+	policies map[string]*IAMPolicy
 }
 
 // NewPolicyEvaluator creates a new policy evaluator
 func NewPolicyEvaluator() *PolicyEvaluator {
 	return &PolicyEvaluator{
-		policies: make(map[string]*Policy),
+		policies: make(map[string]*IAMPolicy),
 	}
 }
 
 // AddPolicy adds a policy
-func (e *PolicyEvaluator) AddPolicy(policy *Policy) {
+func (e *PolicyEvaluator) AddPolicy(policy *IAMPolicy) {
 	e.policies[policy.ID] = policy
 }
 
@@ -90,7 +90,7 @@ func (e *PolicyEvaluator) Evaluate(principal string, action, resource string) bo
 }
 
 // evaluatePolicy evaluates a single policy
-func (e *PolicyEvaluator) evaluatePolicy(policy *Policy, principal, action, resource string) bool {
+func (e *PolicyEvaluator) evaluatePolicy(policy *IAMPolicy, principal, action, resource string) bool {
 	for _, stmt := range policy.Statements {
 		if e.evaluateStatement(&stmt, principal, action, resource) {
 			return stmt.Effect == "Allow"
@@ -100,7 +100,7 @@ func (e *PolicyEvaluator) evaluatePolicy(policy *Policy, principal, action, reso
 }
 
 // evaluateStatement evaluates a single statement
-func (e *PolicyEvaluator) evaluateStatement(stmt *Statement, principal, action, resource string) bool {
+func (e *PolicyEvaluator) evaluateStatement(stmt *IAMStatement, principal, action, resource string) bool {
 	// Check principal
 	if stmt.Principal != nil {
 		if !e.matchPrincipals(stmt.Principal.AWS, principal) {
@@ -191,8 +191,8 @@ var S3ActionToIAMAction = map[string]string{
 }
 
 // ParsePolicy parses a JSON policy
-func ParsePolicy(data []byte) (*Policy, error) {
-	var policy Policy
+func ParsePolicy(data []byte) (*IAMPolicy, error) {
+	var policy IAMPolicy
 	if err := json.Unmarshal(data, &policy); err != nil {
 		return nil, fmt.Errorf("failed to parse policy: %w", err)
 	}
@@ -210,7 +210,7 @@ func ParsePolicy(data []byte) (*Policy, error) {
 }
 
 // ToJSON converts policy to JSON
-func (p *Policy) ToJSON() ([]byte, error) {
+func (p *IAMPolicy) ToJSON() ([]byte, error) {
 	return json.MarshalIndent(p, "", "  ")
 }
 
@@ -292,7 +292,7 @@ func (a *ACL) ToXML() string {
 
 	for _, grant := range a.Grants {
 		xml += `<Grant>`
-		xml += `<Grantee xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="%s">`, grant.Grantee.Type
+		xml += fmt.Sprintf(`<Grantee xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="%s">`, grant.Grantee.Type)
 		if grant.Grantee.ID != "" {
 			xml += fmt.Sprintf(`<ID>%s</ID>`, grant.Grantee.ID)
 		}

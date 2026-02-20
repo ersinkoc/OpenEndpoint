@@ -3,10 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{.Title}}</title>
+    <title>OpenEndpoint | Enterprise S3 Storage</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <script>
         tailwind.config = {
+            darkMode: 'class',
             theme: {
                 extend: {
                     colors: {
@@ -15,459 +19,2001 @@
                         ring: "hsl(var(--ring))",
                         background: "hsl(var(--background))",
                         foreground: "hsl(var(--foreground))",
-                        primary: {
-                            DEFAULT: "hsl(var(--primary))",
-                            foreground: "hsl(var(--primary-foreground))",
-                        },
-                        secondary: {
-                            DEFAULT: "hsl(var(--secondary))",
-                            foreground: "hsl(var(--secondary-foreground))",
-                        },
-                        destructive: {
-                            DEFAULT: "hsl(var(--destructive))",
-                            foreground: "hsl(var(--destructive-foreground))",
-                        },
-                        muted: {
-                            DEFAULT: "hsl(var(--muted))",
-                            foreground: "hsl(var(--muted-foreground))",
-                        },
-                        accent: {
-                            DEFAULT: "hsl(var(--accent))",
-                            foreground: "hsl(var(--accent-foreground))",
-                        },
-                        card: {
-                            DEFAULT: "hsl(var(--card))",
-                            foreground: "hsl(var(--card-foreground))",
-                        },
+                        primary: { DEFAULT: "hsl(var(--primary))", foreground: "hsl(var))" },
+                       (--primary-foreground secondary: { DEFAULT: "hsl(var(--secondary))", foreground: "hsl(var(--secondary-foreground))" },
+                        destructive: { DEFAULT: "hsl(var(--destructive))", foreground: "hsl(var(--destructive-foreground))" },
+                        muted: { DEFAULT: "hsl(var(--muted))", foreground: "hsl(var(--muted-foreground))" },
+                        accent: { DEFAULT: "hsl(var(--accent))", foreground: "hsl(var(--accent-foreground))" },
+                        card: { DEFAULT: "hsl(var(--card))", foreground: "hsl(var(--card-foreground))" },
                     },
-                    borderRadius: {
-                        lg: "var(--radius)",
-                        md: "calc(var(--radius) - 2px)",
-                        sm: "calc(var(--radius) - 4px)",
-                    },
+                    fontFamily: { sans: ['Inter', 'sans-serif'], mono: ['JetBrains Mono', 'monospace'] },
+                    animation: { 'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite', 'float': 'float 6s ease-in-out infinite' }
                 }
             }
         }
     </script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-
         :root {
-            --background: 222 47% 11%;
+            --background: 220 30% 6%;
             --foreground: 210 40% 98%;
-            --card: 222 47% 14%;
+            --card: 220 30% 10%;
             --card-foreground: 210 40% 98%;
-            --primary: 239 84% 67%;
-            --primary-foreground: 210 40% 98%;
-            --secondary: 263 70% 50%;
-            --secondary-foreground: 210 40% 98%;
-            --muted: 217 33% 17%;
-            --muted-foreground: 215 20% 65%;
-            --accent: 263 70% 50%;
-            --accent-foreground: 210 40% 98%;
-            --destructive: 0 63% 31%;
-            --destructive-foreground: 210 40% 98%;
-            --border: 217 33% 25%;
-            --input: 217 33% 17%;
-            --ring: 239 84% 67%;
-            --radius: 0.75rem;
+            --primary: 250 100% 65%;
+            --primary-foreground: 0 0% 100%;
+            --secondary: 280 80% 55%;
+            --secondary-foreground: 0 0% 100%;
+            --muted: 220 20% 15%;
+            --muted-foreground: 215 15% 60%;
+            --accent: 320 80% 60%;
+            --accent-foreground: 0 0% 100%;
+            --destructive: 350 80% 55%;
+            --destructive-foreground: 0 0% 100%;
+            --border: 220 20% 20%;
+            --input: 220 20% 15%;
+            --ring: 250 100% 65%;
         }
 
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
 
         body {
             font-family: 'Inter', sans-serif;
-            background: linear-gradient(135deg, hsl(222, 47%, 11%) 0%, hsl(263, 70%, 10%) 50%, hsl(270, 50%, 8%) 100%);
+            background: linear-gradient(145deg, #0a0e14 0%, #12171f 50%, #0d1117 100%);
             min-height: 100vh;
+            color: hsl(var(--foreground));
+            overflow-x: hidden;
+        }
+
+        /* Animated background */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background:
+                radial-gradient(ellipse at 20% 20%, rgba(99, 102, 241, 0.08) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 80%, rgba(168, 85, 247, 0.06) 0%, transparent 50%),
+                radial-gradient(ellipse at 50% 50%, rgba(56, 189, 248, 0.04) 0%, transparent 70%);
+            pointer-events: none;
+            z-index: -1;
+        }
+
+        .glass {
+            background: rgba(20, 25, 35, 0.8);
+            backdrop-filter: blur(24px);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .glass-card {
+            background: linear-gradient(145deg, rgba(30, 35, 50, 0.9) 0%, rgba(20, 25, 35, 0.95) 100%);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 1.25rem;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .glass-card:hover {
+            transform: translateY(-4px) scale(1.01);
+            border-color: rgba(99, 102, 241, 0.3);
+            box-shadow: 0 25px 50px -15px rgba(0, 0, 0, 0.5), 0 0 40px -10px rgba(99, 102, 241, 0.2);
+        }
+
+        .stat-card {
+            background: linear-gradient(145deg, rgba(30, 35, 50, 0.7) 0%, rgba(20, 25, 35, 0.8) 100%);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.04);
+            border-radius: 1.25rem;
+            padding: 1.5rem;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+        }
+
+        .stat-card:hover {
+            transform: translateY(-6px);
+            box-shadow: 0 30px 60px -15px rgba(0, 0, 0, 0.6);
+        }
+
+        .stat-card:hover::before {
+            background: linear-gradient(90deg, var(--primary), var(--secondary), var(--primary));
+            background-size: 200% 100%;
+            animation: shimmer 2s infinite;
+        }
+
+        @keyframes shimmer {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+        }
+
+        .sidebar {
+            background: linear-gradient(180deg, rgba(15, 20, 30, 0.95) 0%, rgba(10, 15, 22, 0.98) 100%);
+            border-right: 1px solid rgba(255, 255, 255, 0.04);
+        }
+
+        .sidebar-item {
+            display: flex;
+            align-items: center;
+            gap: 0.875rem;
+            padding: 0.875rem 1rem;
+            border-radius: 0.75rem;
+            color: hsl(var(--muted-foreground));
+            transition: all 0.25s ease;
+            cursor: pointer;
+            text-decoration: none;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .sidebar-item::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 3px;
+            height: 0;
+            background: linear-gradient(180deg, var(--primary), var(--secondary));
+            border-radius: 0 4px 4px 0;
+            transition: height 0.25s ease;
+        }
+
+        .sidebar-item:hover {
+            background: rgba(99, 102, 241, 0.08);
             color: hsl(var(--foreground));
         }
 
-        /* Custom scrollbar */
-        ::-webkit-scrollbar { width: 8px; }
-        ::-webkit-scrollbar-track { background: hsl(var(--muted)); border-radius: 4px; }
-        ::-webkit-scrollbar-thumb { background: hsl(var(--primary)); border-radius: 4px; }
-
-        /* Animations */
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
+        .sidebar-item.active {
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(168, 85, 247, 0.1) 100%);
+            color: hsl(var(--foreground));
         }
 
-        @keyframes pulse-glow {
-            0%, 100% { box-shadow: 0 0 20px hsl(var(--primary) / 0.3); }
-            50% { box-shadow: 0 0 40px hsl(var(--primary) / 0.5); }
+        .sidebar-item.active::before {
+            height: 60%;
         }
 
-        @keyframes float {
-            0%, 100% { transform: translateY(0px); }
-            50% { transform: translateY(-10px); }
-        }
-
-        .animate-fade-in { animation: fadeIn 0.5s ease-out forwards; }
-        .animate-pulse-glow { animation: pulse-glow 3s ease-in-out infinite; }
-        .animate-float { animation: float 3s ease-in-out infinite; }
-
-        /* Card styles */
-        .card {
-            background: hsl(var(--card));
-            border: 1px solid hsl(var(--border));
-            border-radius: var(--radius);
-            transition: all 0.3s ease;
-        }
-
-        .card:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 20px 40px -12px hsl(var(--primary) / 0.3);
-            border-color: hsl(var(--primary) / 0.5);
-        }
-
-        /* Button styles */
         .btn {
             display: inline-flex;
             align-items: center;
             justify-content: center;
             gap: 0.5rem;
             padding: 0.75rem 1.5rem;
-            border-radius: var(--radius);
+            border-radius: 0.75rem;
             font-weight: 600;
             font-size: 0.875rem;
-            transition: all 0.2s ease;
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
             cursor: pointer;
             border: none;
-            text-decoration: none;
+            outline: none;
+            position: relative;
+            overflow: hidden;
         }
 
         .btn-primary {
-            background: hsl(var(--primary));
-            color: hsl(var(--primary-foreground));
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%);
+            background-size: 200% 100%;
+            color: white;
+            box-shadow: 0 4px 15px -3px rgba(99, 102, 241, 0.4);
         }
 
         .btn-primary:hover {
-            background: hsl(var(--primary) / 0.9);
-            transform: scale(1.02);
+            background-position: 100% 0;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px -5px rgba(99, 102, 241, 0.5);
         }
 
-        .btn-outline {
-            background: transparent;
-            border: 1px solid hsl(var(--border));
+        .btn-secondary {
+            background: hsl(var(--muted));
             color: hsl(var(--foreground));
         }
 
-        .btn-outline:hover {
-            background: hsl(var(--accent) / 0.1);
-            border-color: hsl(var(--primary));
+        .btn-secondary:hover {
+            background: hsl(var(--muted-foreground));
+            color: hsl(var(--background));
         }
 
-        /* Badge */
-        .badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.375rem;
-            padding: 0.25rem 0.75rem;
-            border-radius: 9999px;
-            font-size: 0.75rem;
-            font-weight: 600;
+        .btn-danger {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            color: white;
         }
 
-        .badge-success {
-            background: hsl(142 71% 45% / 0.15);
-            color: hsl(142 71% 65%);
-            border: 1px solid hsl(142 71% 45% / 0.3);
+        .btn-danger:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px -5px rgba(239, 68, 68, 0.4);
         }
 
-        .badge-success::before {
-            content: '';
-            width: 6px;
-            height: 6px;
-            border-radius: 50%;
-            background: currentColor;
-            animation: pulse 2s ease-in-out infinite;
+        .btn-ghost {
+            background: transparent;
+            color: hsl(var(--muted-foreground));
         }
 
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
+        .btn-ghost:hover {
+            background: rgba(255, 255, 255, 0.05);
+            color: hsl(var(--foreground));
         }
 
-        /* Glass effect */
-        .glass {
-            background: hsl(var(--card) / 0.8);
-            backdrop-filter: blur(20px);
-            border: 1px solid hsl(var(--border) / 0.5);
-        }
-
-        /* Gradient text */
-        .text-gradient {
-            background: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--secondary)) 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-
-        /* Grid pattern background */
-        .bg-grid {
-            background-image:
-                linear-gradient(hsl(var(--primary) / 0.03) 1px, transparent 1px),
-                linear-gradient(90deg, hsl(var(--primary) / 0.03) 1px, transparent 1px);
-            background-size: 50px 50px;
-        }
-
-        /* Stats icon */
-        .stat-icon {
-            width: 3rem;
-            height: 3rem;
-            border-radius: 0.75rem;
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.75);
+            backdrop-filter: blur(8px);
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 1.5rem;
+            z-index: 100;
+            animation: fadeIn 0.2s ease;
         }
+
+        .modal {
+            background: linear-gradient(145deg, #1a1f2e 0%, #141820 100%);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 1.25rem;
+            padding: 2rem;
+            max-width: 32rem;
+            width: 100%;
+            animation: modalIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        @keyframes modalIn {
+            from { opacity: 0; transform: scale(0.9) translateY(20px); }
+            to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            padding: 1rem 1.5rem;
+            border-radius: 0.75rem;
+            color: white;
+            font-weight: 500;
+            z-index: 200;
+            animation: slideIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+            box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.5);
+        }
+
+        .toast.success { background: linear-gradient(135deg, #10b981 0%, #059669 100%); }
+        .toast.error { background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateX(100px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        .data-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+        }
+
+        .data-table th {
+            text-align: left;
+            padding: 1rem;
+            font-weight: 600;
+            color: hsl(var(--muted-foreground));
+            border-bottom: 1px solid hsl(var(--border));
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        .data-table td {
+            padding: 1rem;
+            border-bottom: 1px solid hsl(var(--border));
+        }
+
+        .data-table tbody tr {
+            transition: all 0.2s ease;
+        }
+
+        .data-table tbody tr:hover td {
+            background: rgba(99, 102, 241, 0.05);
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.25rem 0.625rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+
+        .badge-success { background: rgba(16, 185, 129, 0.15); color: #10b981; }
+        .badge-warning { background: rgba(234, 179, 8, 0.15); color: #eab308; }
+        .badge-error { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+        .badge-info { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.2); }
+
+        /* Progress ring */
+        .progress-ring { transform: rotate(-90deg); }
+        .progress-ring-circle { transition: stroke-dashoffset 0.5s ease; }
+
+        /* Floating animation */
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+        }
+
+        .float-animation { animation: float 6s ease-in-out infinite; }
+
+        /* Glow effect */
+        .glow {
+            box-shadow: 0 0 40px -10px rgba(99, 102, 241, 0.3);
+        }
+
+        .input-field {
+            background: rgba(15, 20, 30, 0.8);
+            border: 1px solid hsl(var(--border));
+            border-radius: 0.75rem;
+            padding: 0.75rem 1rem;
+            color: white;
+            transition: all 0.2s ease;
+        }
+
+        .input-field:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+        }
+
+        .input-field::placeholder {
+            color: hsl(var(--muted-foreground));
+        }
+
+        .select-field {
+            background: rgba(15, 20, 30, 0.8);
+            border: 1px solid hsl(var(--border));
+            border-radius: 0.75rem;
+            padding: 0.75rem 1rem;
+            color: white;
+            cursor: pointer;
+        }
+
+        .select-field:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+
+        .hidden { display: none !important; }
     </style>
 </head>
-<body class="min-h-screen bg-grid">
-    <div class="container mx-auto max-w-6xl px-6 py-8">
-
-        <!-- Header -->
-        <header class="card p-8 text-center mb-8 animate-fade-in">
-            <div class="flex items-center justify-center gap-4 mb-4">
-                <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center text-white text-2xl font-bold shadow-lg shadow-violet-500/30 animate-float">
-                    OE
+<body class="min-h-screen">
+    <div class="flex min-h-screen">
+        <!-- Sidebar -->
+        <aside class="sidebar w-72 flex flex-col h-screen sticky top-0">
+            <!-- Logo -->
+            <div class="p-6 border-b border-white/5">
+                <div class="flex items-center gap-4">
+                    <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center shadow-lg glow float-animation">
+                        <i data-lucide="cloud" class="w-7 h-7 text-white"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-xl font-bold bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent">OpenEndpoint</h1>
+                        <p class="text-xs text-gray-500 font-medium">Enterprise Object Storage</p>
+                    </div>
                 </div>
-                <h1 class="text-4xl font-extrabold text-gradient">OpenEndpoint</h1>
-            </div>
-            <p class="text-muted-foreground text-lg font-medium">Developer-First S3-Compatible Object Storage</p>
-            <div class="mt-6">
-                <span class="badge badge-success">Online</span>
-            </div>
-        </header>
-
-        <!-- Navigation -->
-        <nav class="glass rounded-xl p-2 mb-8 flex gap-2 flex-wrap">
-            <a href="/_dashboard/" class="btn btn-primary flex-1">Dashboard</a>
-            <a href="/_dashboard/browser" class="btn btn-outline flex-1">S3 Browser</a>
-            <a href="/_dashboard/metrics" class="btn btn-outline flex-1">Metrics</a>
-            <a href="/_dashboard/cluster" class="btn btn-outline flex-1">Cluster</a>
-            <a href="/_mgmt/" class="btn btn-outline flex-1">API</a>
-        </nav>
-
-        <!-- Stats Grid -->
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-            <!-- Buckets -->
-            <div class="card p-6 animate-fade-in" style="animation-delay: 0.1s">
-                <div class="flex items-center justify-between mb-4">
-                    <div class="stat-icon bg-violet-500/20 text-violet-400">📦</div>
-                    <span class="text-xs text-muted-foreground">Storage</span>
-                </div>
-                <div class="text-3xl font-bold text-white mb-1" id="bucket-count">-</div>
-                <div class="text-sm text-muted-foreground">Total Buckets</div>
             </div>
 
-            <!-- Objects -->
-            <div class="card p-6 animate-fade-in" style="animation-delay: 0.2s">
-                <div class="flex items-center justify-between mb-4">
-                    <div class="stat-icon bg-emerald-500/20 text-emerald-400">📄</div>
-                    <span class="text-xs text-muted-foreground">Data</span>
-                </div>
-                <div class="text-3xl font-bold text-white mb-1" id="object-count">-</div>
-                <div class="text-sm text-muted-foreground">Total Objects</div>
-            </div>
+            <!-- Navigation -->
+            <nav class="flex-1 p-4 space-y-1 overflow-y-auto">
+                <a href="#" class="sidebar-item active" data-view="dashboard">
+                    <i data-lucide="layout-dashboard" class="w-5 h-5"></i>
+                    <span>Overview</span>
+                </a>
+                <a href="#" class="sidebar-item" data-view="buckets">
+                    <i data-lucide="database" class="w-5 h-5"></i>
+                    <span>Buckets</span>
+                </a>
+                <a href="#" class="sidebar-item" data-view="objects">
+                    <i data-lucide="folder-open" class="w-5 h-5"></i>
+                    <span>Objects</span>
+                </a>
+                <a href="#" class="sidebar-item" data-view="analytics">
+                    <i data-lucide="bar-chart-3" class="w-5 h-5"></i>
+                    <span>Analytics</span>
+                </a>
+                <a href="#" class="sidebar-item" data-view="replication">
+                    <i data-lucide="refresh-cw" class="w-5 h-5"></i>
+                    <span>Replication</span>
+                </a>
+                <a href="#" class="sidebar-item" data-view="lifecycle">
+                    <i data-lucide="clock" class="w-5 h-5"></i>
+                    <span>Lifecycle</span>
+                </a>
+                <a href="#" class="sidebar-item" data-view="users">
+                    <i data-lucide="users" class="w-5 h-5"></i>
+                    <span>IAM Users</span>
+                </a>
+                <a href="#" class="sidebar-item" data-view="settings">
+                    <i data-lucide="settings" class="w-5 h-5"></i>
+                    <span>Settings</span>
+                </a>
+            </nav>
 
-            <!-- Uptime -->
-            <div class="card p-6 animate-fade-in" style="animation-delay: 0.3s">
-                <div class="flex items-center justify-between mb-4">
-                    <div class="stat-icon bg-amber-500/20 text-amber-400">⏱️</div>
-                    <span class="text-xs text-muted-foreground">Runtime</span>
+            <!-- Quick Stats -->
+            <div class="p-4 border-t border-white/5">
+                <div class="glass-card p-4 rounded-xl">
+                    <div class="flex items-center justify-between mb-3">
+                        <span class="text-xs text-gray-500 font-medium">System Health</span>
+                        <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3 text-center">
+                        <div>
+                            <p class="text-lg font-bold text-white" id="quick-ops">0</p>
+                            <p class="text-xs text-gray-500">Ops/min</p>
+                        </div>
+                        <div>
+                            <p class="text-lg font-bold text-white" id="quick-err">0%</p>
+                            <p class="text-xs text-gray-500">Error</p>
+                        </div>
+                    </div>
                 </div>
-                <div class="text-3xl font-bold text-white mb-1" id="uptime">-</div>
-                <div class="text-sm text-muted-foreground">Uptime</div>
             </div>
 
             <!-- Version -->
-            <div class="card p-6 animate-fade-in" style="animation-delay: 0.4s">
-                <div class="flex items-center justify-between mb-4">
-                    <div class="stat-icon bg-cyan-500/20 text-cyan-400">⚙️</div>
-                    <span class="text-xs text-muted-foreground">Release</span>
+            <div class="p-4 border-t border-white/5">
+                <div class="flex items-center justify-between text-sm">
+                    <span class="text-gray-600 font-mono">v1.0.0</span>
+                    <div class="flex items-center gap-2 text-emerald-500">
+                        <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                        <span class="text-xs font-medium">Online</span>
+                    </div>
                 </div>
-                <div class="text-3xl font-bold text-white mb-1">{{.Version}}</div>
-                <div class="text-sm text-muted-foreground">Version</div>
             </div>
-        </div>
+        </aside>
 
         <!-- Main Content -->
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <!-- Quick Actions & Endpoints -->
-            <div class="lg:col-span-2 space-y-8">
-                <!-- Quick Actions -->
-                <div class="card p-6 animate-fade-in" style="animation-delay: 0.5s">
-                    <h2 class="text-xl font-bold text-white mb-6 flex items-center gap-2">
-                        <span class="w-1 h-6 bg-gradient-to-b from-violet-500 to-purple-500 rounded-full"></span>
-                        Quick Actions
-                    </h2>
-                    <div class="grid grid-cols-2 gap-4">
-                        <a href="/s3/" class="btn btn-outline justify-start">
-                            <span class="text-lg">📁</span>
-                            S3 Browser
-                        </a>
-                        <a href="/_mgmt/buckets" class="btn btn-outline justify-start">
-                            <span class="text-lg">📦</span>
-                            Manage Buckets
-                        </a>
-                        <a href="/metrics" class="btn btn-outline justify-start">
-                            <span class="text-lg">📊</span>
-                            View Metrics
-                        </a>
-                        <a href="/_dashboard/cluster" class="btn btn-outline justify-start">
-                            <span class="text-lg">🌐</span>
-                            Cluster Status
-                        </a>
+        <main class="flex-1 overflow-y-auto">
+            <!-- Header -->
+            <header class="glass border-b border-white/5 px-8 py-5 sticky top-0 z-40">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h2 class="text-2xl font-bold text-white" id="page-title">Dashboard</h2>
+                        <p class="text-sm text-gray-500 mt-1" id="page-subtitle">Real-time system overview</p>
+                    </div>
+                    <div class="flex items-center gap-4">
+                        <div class="flex items-center gap-2 px-4 py-2 glass rounded-xl">
+                            <i data-lucide="search" class="w-4 h-4 text-gray-500"></i>
+                            <input type="text" placeholder="Search buckets, objects..." class="bg-transparent border-none outline-none text-sm text-white placeholder-gray-500 w-48">
+                        </div>
+                        <button onclick="refreshAll()" class="btn btn-ghost">
+                            <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                        </button>
+                        <button onclick="showCreateBucketModal()" class="btn btn-primary">
+                            <i data-lucide="plus" class="w-4 h-4"></i>
+                            New Bucket
+                        </button>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Dashboard View -->
+            <div id="view-dashboard" class="p-8">
+                <!-- Stats Grid -->
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                    <!-- Storage -->
+                    <div class="stat-card">
+                        <div class="flex items-center justify-between mb-4">
+                            <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center shadow-lg">
+                                <i data-lucide="hard-drive" class="w-6 h-6 text-white"></i>
+                            </div>
+                            <span class="badge badge-success">Active</span>
+                        </div>
+                        <p class="text-sm text-gray-400 mb-1">Storage Used</p>
+                        <p class="text-3xl font-bold text-white mb-3" id="storage-used">-</p>
+                        <div class="h-2 bg-gray-800 rounded-full overflow-hidden">
+                            <div class="h-full bg-gradient-to-r from-blue-500 to-cyan-500 rounded-full transition-all duration-1000" id="storage-bar" style="width: 0%"></div>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-2" id="storage-detail">0 GB of 10 GB</p>
+                    </div>
+
+                    <!-- Objects -->
+                    <div class="stat-card">
+                        <div class="flex items-center justify-between mb-4">
+                            <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shadow-lg">
+                                <i data-lucide="layers" class="w-6 h-6 text-white"></i>
+                            </div>
+                        </div>
+                        <p class="text-sm text-gray-400 mb-1">Total Objects</p>
+                        <p class="text-3xl font-bold text-white mb-1" id="total-objects">-</p>
+                        <p class="text-xs text-gray-500">Across <span class="text-white font-medium" id="total-buckets">0</span> buckets</p>
+                    </div>
+
+                    <!-- Operations -->
+                    <div class="stat-card">
+                        <div class="flex items-center justify-between mb-4">
+                            <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center shadow-lg">
+                                <i data-lucide="activity" class="w-6 h-6 text-white"></i>
+                            </div>
+                        </div>
+                        <p class="text-sm text-gray-400 mb-1">Operations</p>
+                        <p class="text-3xl font-bold text-white mb-1" id="total-ops">-</p>
+                        <p class="text-xs text-emerald-400 font-medium" id="ops-rate">0 req/s</p>
+                    </div>
+
+                    <!-- Latency -->
+                    <div class="stat-card">
+                        <div class="flex items-center justify-between mb-4">
+                            <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center shadow-lg">
+                                <i data-lucide="zap" class="w-6 h-6 text-white"></i>
+                            </div>
+                        </div>
+                        <p class="text-sm text-gray-400 mb-1">Avg Latency</p>
+                        <p class="text-3xl font-bold text-white mb-1" id="avg-latency">-</p>
+                        <p class="text-xs text-gray-500">p99: <span class="text-white font-medium" id="p99-latency">-</span></p>
                     </div>
                 </div>
 
-                <!-- API Endpoints -->
-                <div class="card p-6 animate-fade-in" style="animation-delay: 0.6s">
-                    <h2 class="text-xl font-bold text-white mb-6 flex items-center gap-2">
-                        <span class="w-1 h-6 bg-gradient-to-b from-violet-500 to-purple-500 rounded-full"></span>
-                        API Endpoints
-                    </h2>
-                    <div class="space-y-3">
-                        <div class="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
-                            <span class="font-medium">S3 API</span>
-                            <code class="text-sm bg-violet-500/20 text-violet-300 px-3 py-1 rounded">/s3/</code>
+                <!-- Charts Row -->
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+                    <!-- Storage Distribution -->
+                    <div class="glass-card p-6">
+                        <h3 class="text-lg font-semibold text-white mb-6 flex items-center gap-2">
+                            <i data-lucide="pie-chart" class="w-5 h-5 text-blue-400"></i>
+                            Storage Distribution
+                        </h3>
+                        <div class="h-64 relative">
+                            <canvas id="storageChart"></canvas>
+                            <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                <div class="text-center">
+                                    <p class="text-2xl font-bold text-white" id="storage-percent">0%</p>
+                                    <p class="text-xs text-gray-500">Used</p>
+                                </div>
+                            </div>
                         </div>
-                        <div class="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
-                            <span class="font-medium">Management</span>
-                            <code class="text-sm bg-violet-500/20 text-violet-300 px-3 py-1 rounded">/_mgmt/</code>
+                    </div>
+
+                    <!-- Operations Timeline -->
+                    <div class="glass-card p-6 lg:col-span-2">
+                        <h3 class="text-lg font-semibold text-white mb-6 flex items-center gap-2">
+                            <i data-lucide="line-chart" class="w-5 h-5 text-purple-400"></i>
+                            Operations Timeline
+                        </h3>
+                        <div class="h-64">
+                            <canvas id="opsChart"></canvas>
                         </div>
-                        <div class="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
-                            <span class="font-medium">Health Check</span>
-                            <code class="text-sm bg-violet-500/20 text-violet-300 px-3 py-1 rounded">/health</code>
+                    </div>
+                </div>
+
+                <!-- Buckets & S3 Operations -->
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <!-- Buckets -->
+                    <div class="glass-card p-6 lg:col-span-2">
+                        <div class="flex items-center justify-between mb-6">
+                            <h3 class="text-lg font-semibold text-white flex items-center gap-2">
+                                <i data-lucide="folder" class="w-5 h-5 text-amber-400"></i>
+                                Recent Buckets
+                            </h3>
+                            <button onclick="switchView('buckets')" class="text-sm text-blue-400 hover:text-blue-300">View All</button>
                         </div>
-                        <div class="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
-                            <span class="font-medium">Metrics</span>
-                            <code class="text-sm bg-violet-500/20 text-violet-300 px-3 py-1 rounded">/metrics</code>
+                        <div class="overflow-x-auto">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Bucket</th>
+                                        <th>Objects</th>
+                                        <th>Size</th>
+                                        <th>Region</th>
+                                        <th>Created</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="buckets-tbody">
+                                    <tr><td colspan="6" class="text-center text-gray-500 py-8">Loading...</td></tr>
+                                </tbody>
+                            </table>
                         </div>
-                        <div class="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
-                            <span class="font-medium">Dashboard</span>
-                            <code class="text-sm bg-violet-500/20 text-violet-300 px-3 py-1 rounded">/_dashboard/</code>
+                    </div>
+
+                    <!-- S3 Operations -->
+                    <div class="glass-card p-6">
+                        <h3 class="text-lg font-semibold text-white mb-6 flex items-center gap-2">
+                            <i data-lucide="box" class="w-5 h-5 text-emerald-400"></i>
+                            S3 Operations
+                        </h3>
+                        <div class="space-y-4">
+                            <div class="flex items-center justify-between p-4 bg-gray-800/50 rounded-xl hover:bg-gray-800 transition">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center">
+                                        <i data-lucide="download" class="w-5 h-5 text-blue-400"></i>
+                                    </div>
+                                    <div>
+                                        <p class="text-sm font-medium">GetObject</p>
+                                        <p class="text-xs text-gray-500">Read operations</p>
+                                    </div>
+                                </div>
+                                <span class="text-xl font-bold text-white" id="ops-get">0</span>
+                            </div>
+                            <div class="flex items-center justify-between p-4 bg-gray-800/50 rounded-xl hover:bg-gray-800 transition">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 rounded-lg bg-green-500/20 flex items-center justify-center">
+                                        <i data-lucide="upload" class="w-5 h-5 text-green-400"></i>
+                                    </div>
+                                    <div>
+                                        <p class="text-sm font-medium">PutObject</p>
+                                        <p class="text-xs text-gray-500">Write operations</p>
+                                    </div>
+                                </div>
+                                <span class="text-xl font-bold text-white" id="ops-put">0</span>
+                            </div>
+                            <div class="flex items-center justify-between p-4 bg-gray-800/50 rounded-xl hover:bg-gray-800 transition">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 rounded-lg bg-red-500/20 flex items-center justify-center">
+                                        <i data-lucide="trash-2" class="w-5 h-5 text-red-400"></i>
+                                    </div>
+                                    <div>
+                                        <p class="text-sm font-medium">DeleteObject</p>
+                                        <p class="text-xs text-gray-500">Delete operations</p>
+                                    </div>
+                                </div>
+                                <span class="text-xl font-bold text-white" id="ops-delete">0</span>
+                            </div>
+                            <div class="flex items-center justify-between p-4 bg-gray-800/50 rounded-xl hover:bg-gray-800 transition">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center">
+                                        <i data-lucide="list" class="w-5 h-5 text-purple-400"></i>
+                                    </div>
+                                    <div>
+                                        <p class="text-sm font-medium">ListObjects</p>
+                                        <p class="text-xs text-gray-500">List operations</p>
+                                    </div>
+                                </div>
+                                <span class="text-xl font-bold text-white" id="ops-list">0</span>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Sidebar -->
-            <div class="space-y-8">
-                <!-- System Info -->
-                <div class="card p-6 animate-fade-in" style="animation-delay: 0.7s">
-                    <h2 class="text-xl font-bold text-white mb-6 flex items-center gap-2">
-                        <span class="w-1 h-6 bg-gradient-to-b from-violet-500 to-purple-500 rounded-full"></span>
-                        System Info
-                    </h2>
-                    <div class="space-y-4">
-                        <div class="flex justify-between items-center py-2 border-b border-border">
-                            <span class="text-muted-foreground">Status</span>
-                            <span class="badge badge-success">Running</span>
-                        </div>
-                        <div class="flex justify-between items-center py-2 border-b border-border">
-                            <span class="text-muted-foreground">Version</span>
-                            <span class="font-semibold">{{.Version}}</span>
-                        </div>
-                        <div class="flex justify-between items-center py-2 border-b border-border">
-                            <span class="text-muted-foreground">Protocol</span>
-                            <span class="font-semibold">S3 Compatible</span>
-                        </div>
-                        <div class="flex justify-between items-center py-2 border-b border-border">
-                            <span class="text-muted-foreground">Storage</span>
-                            <span class="font-semibold">FlatFile</span>
-                        </div>
-                        <div class="flex justify-between items-center py-2 border-b border-border">
-                            <span class="text-muted-foreground">Metadata</span>
-                            <span class="font-semibold">Pebble</span>
-                        </div>
-                        <div class="flex justify-between items-center py-2">
-                            <span class="text-muted-foreground">Build</span>
-                            <span class="font-semibold">Release</span>
-                        </div>
+            <!-- Buckets View -->
+            <div id="view-buckets" class="p-8 hidden">
+                <div class="glass-card p-6">
+                    <div class="flex items-center justify-between mb-6">
+                        <h3 class="text-xl font-semibold text-white">All Buckets</h3>
+                        <button onclick="showCreateBucketModal()" class="btn btn-primary">
+                            <i data-lucide="plus" class="w-4 h-4"></i>
+                            Create Bucket
+                        </button>
                     </div>
-                </div>
-
-                <!-- Storage Stats -->
-                <div class="card p-6 animate-fade-in" style="animation-delay: 0.8s">
-                    <h2 class="text-xl font-bold text-white mb-6 flex items-center gap-2">
-                        <span class="w-1 h-6 bg-gradient-to-b from-violet-500 to-purple-500 rounded-full"></span>
-                        Storage Stats
-                    </h2>
-                    <div class="space-y-4">
-                        <div>
-                            <div class="flex justify-between text-sm mb-2">
-                                <span class="text-muted-foreground">Used</span>
-                                <span class="font-semibold" id="storage-used">-</span>
-                            </div>
-                            <div class="h-2 bg-muted rounded-full overflow-hidden">
-                                <div class="h-full bg-gradient-to-r from-violet-500 to-purple-500 rounded-full" style="width: 35%"></div>
-                            </div>
-                        </div>
-                        <div>
-                            <div class="flex justify-between text-sm mb-2">
-                                <span class="text-muted-foreground">Available</span>
-                                <span class="font-semibold" id="storage-avail">-</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Quick Links -->
-                <div class="card p-6 animate-fade-in" style="animation-delay: 0.9s">
-                    <h2 class="text-xl font-bold text-white mb-6 flex items-center gap-2">
-                        <span class="w-1 h-6 bg-gradient-to-b from-violet-500 to-purple-500 rounded-full"></span>
-                        Quick Links
-                    </h2>
-                    <div class="space-y-2">
-                        <a href="https://docs.aws.amazon.com/AmazonS3/latest/API/Welcome.html" target="_blank" class="btn btn-outline w-full justify-start text-sm">
-                            🌐 AWS S3 Docs
-                        </a>
-                        <a href="https://github.com/anthropics/claude-code" target="_blank" class="btn btn-outline w-full justify-start text-sm">
-                            📖 Documentation
-                        </a>
-                        <a href="https://github.com" target="_blank" class="btn btn-outline w-full justify-start text-sm">
-                            ⭐ GitHub
-                        </a>
+                    <div class="overflow-x-auto">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Bucket Name</th>
+                                    <th>Region</th>
+                                    <th>Objects</th>
+                                    <th>Size</th>
+                                    <th>Versioning</th>
+                                    <th>Encryption</th>
+                                    <th>Created</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="all-buckets-tbody">
+                                <tr><td colspan="8" class="text-center text-gray-500 py-8">Loading...</td></tr>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
-        </div>
 
-        <!-- Footer -->
-        <footer class="text-center mt-12 py-6 text-muted-foreground">
-            <p class="text-sm">© 2026 OpenEndpoint. Apache License 2.0</p>
-            <p class="text-xs mt-2">S3-Compatible Object Storage Platform</p>
-        </footer>
+            <!-- Settings View -->
+            <div id="view-settings" class="p-8 hidden">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div class="glass-card p-6">
+                        <h3 class="text-lg font-semibold text-white mb-6 flex items-center gap-2">
+                            <i data-lucide="settings" class="w-5 h-5 text-blue-400"></i>
+                            General Settings
+                        </h3>
+                        <div class="space-y-5">
+                            <div>
+                                <label class="block text-sm text-gray-400 mb-2">Server Region</label>
+                                <select class="select-field w-full">
+                                    <option>US East (N. Virginia)</option>
+                                    <option>US West (Oregon)</option>
+                                    <option>EU (Ireland)</option>
+                                    <option>AP (Mumbai)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-400 mb-2">Default Storage Class</label>
+                                <select class="select-field w-full">
+                                    <option>Standard</option>
+                                    <option>Glacier</option>
+                                    <option>Intelligent-Tiering</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="glass-card p-6">
+                        <h3 class="text-lg font-semibold text-white mb-6 flex items-center gap-2">
+                            <i data-lucide="shield" class="w-5 h-5 text-emerald-400"></i>
+                            Security
+                        </h3>
+                        <div class="space-y-5">
+                            <div class="flex items-center justify-between p-4 bg-gray-800/50 rounded-xl">
+                                <div>
+                                    <p class="text-sm font-medium text-white">Block Public Access</p>
+                                    <p class="text-xs text-gray-500">Prevent all public access</p>
+                                </div>
+                                <button class="w-12 h-6 bg-emerald-500 rounded-full relative">
+                                    <span class="absolute w-5 h-5 bg-white rounded-full top-0.5 left-6 transition-transform"></span>
+                                </button>
+                            </div>
+                            <div class="flex items-center justify-between p-4 bg-gray-800/50 rounded-xl">
+                                <div>
+                                    <p class="text-sm font-medium text-white">Server-Side Encryption</p>
+                                    <p class="text-xs text-gray-500">AES-256 encryption at rest</p>
+                                </div>
+                                <button class="w-12 h-6 bg-emerald-500 rounded-full relative">
+                                    <span class="absolute w-5 h-5 bg-white rounded-full top-0.5 left-6 transition-transform"></span>
+                                </button>
+                            </div>
+                            <div class="flex items-center justify-between p-4 bg-gray-800/50 rounded-xl">
+                                <div>
+                                    <p class="text-sm font-medium text-white">Audit Logging</p>
+                                    <p class="text-xs text-gray-500">Log all API operations</p>
+                                </div>
+                                <button class="w-12 h-6 bg-emerald-500 rounded-full relative">
+                                    <span class="absolute w-5 h-5 bg-white rounded-full top-0.5 left-6 transition-transform"></span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Analytics View -->
+            <div id="view-analytics" class="p-8 hidden">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div class="glass-card p-6">
+                        <h3 class="text-lg font-semibold text-white mb-4">Request Rate</h3>
+                        <div class="h-64">
+                            <canvas id="requestChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="glass-card p-6">
+                        <h3 class="text-lg font-semibold text-white mb-4">Error Distribution</h3>
+                        <div class="h-64">
+                            <canvas id="errorChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Objects View -->
+            <div id="view-objects" class="p-8 hidden">
+                <div class="glass-card p-6">
+                    <div class="flex items-center justify-between mb-6">
+                        <div class="flex items-center gap-4">
+                            <select id="object-bucket-select" onchange="loadObjects()" class="select-field">
+                                <option value="">Select a bucket</option>
+                            </select>
+                            <div id="object-breadcrumb" class="text-sm text-gray-400"></div>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <button onclick="showUploadModal()" id="upload-btn" class="btn btn-primary" style="display:none">
+                                <i data-lucide="upload" class="w-4 h-4"></i>
+                                Upload
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Upload Zone -->
+                    <div id="upload-zone" class="hidden mb-6 p-6 border-2 border-dashed border-gray-700 rounded-xl text-center">
+                        <i data-lucide="cloud-upload" class="w-12 h-12 text-gray-500 mx-auto mb-3"></i>
+                        <p class="text-gray-400 mb-2">Drag & drop files here or click to upload</p>
+                        <input type="file" id="file-input" multiple onchange="uploadFiles(this.files)" class="hidden">
+                        <button onclick="document.getElementById('file-input').click()" class="btn btn-secondary">Browse Files</button>
+                        <div id="upload-progress" class="mt-4 hidden">
+                            <div class="h-2 bg-gray-800 rounded-full overflow-hidden">
+                                <div id="upload-progress-bar" class="h-full bg-gradient-to-r from-blue-500 to-purple-500 transition-all" style="width: 0%"></div>
+                            </div>
+                            <p class="text-xs text-gray-500 mt-2" id="upload-status"></p>
+                        </div>
+                    </div>
+
+                    <!-- Objects Table -->
+                    <div id="objects-container">
+                        <p class="text-gray-500 text-center py-12">Select a bucket to view objects</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Replication View -->
+            <div id="view-replication" class="p-8 hidden">
+                <div class="glass-card p-6 mb-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-lg font-semibold text-white">Replication Rules</h3>
+                        <button onclick="document.getElementById('replication-modal').classList.remove('hidden')" class="btn btn-primary">
+                            <i data-lucide="plus" class="w-4 h-4"></i>
+                            Add Rule
+                        </button>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm text-gray-400 mb-2">Select Bucket</label>
+                        <select id="replication-bucket-select" onchange="loadReplicationRules()" class="select-field w-full md:w-1/3">
+                            <option value="">Select a bucket</option>
+                        </select>
+                    </div>
+                    <div id="replication-rules-container">
+                        <div class="text-center py-12 text-gray-500">
+                            <i data-lucide="refresh-cw" class="w-16 h-16 mx-auto mb-4 opacity-30"></i>
+                            <p>Select a bucket to view replication rules</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Lifecycle View -->
+            <div id="view-lifecycle" class="p-8 hidden">
+                <div class="glass-card p-6 mb-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-lg font-semibold text-white">Lifecycle Rules</h3>
+                        <button onclick="document.getElementById('lifecycle-modal').classList.remove('hidden')" class="btn btn-primary">
+                            <i data-lucide="plus" class="w-4 h-4"></i>
+                            Add Rule
+                        </button>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm text-gray-400 mb-2">Select Bucket</label>
+                        <select id="lifecycle-bucket-select" onchange="loadLifecycleRules()" class="select-field w-full md:w-1/3">
+                            <option value="">Select a bucket</option>
+                        </select>
+                    </div>
+                    <div id="lifecycle-rules-container">
+                        <div class="text-center py-12 text-gray-500">
+                            <i data-lucide="clock" class="w-16 h-16 mx-auto mb-4 opacity-30"></i>
+                            <p>Select a bucket to view lifecycle rules</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- IAM Users View -->
+            <div id="view-users" class="p-8 hidden">
+                <div class="glass-card p-6 mb-6">
+                    <div class="flex items-center justify-between mb-6">
+                        <h3 class="text-lg font-semibold text-white">IAM Users</h3>
+                        <button onclick="document.getElementById('create-user-modal').classList.remove('hidden')" class="btn btn-primary">
+                            <i data-lucide="user-plus" class="w-4 h-4"></i>
+                            Add User
+                        </button>
+                    </div>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>User</th>
+                                <th>Access Key</th>
+                                <th>Status</th>
+                                <th>Created</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="users-tbody">
+                            <tr>
+                                <td colspan="5" class="text-center py-8 text-gray-500">Loading...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
     </div>
 
+    <!-- Create Bucket Modal -->
+    <div id="create-bucket-modal" class="modal-overlay hidden">
+        <div class="modal">
+            <div class="flex items-center justify-between mb-6">
+                <h3 class="text-xl font-semibold text-white">Create New Bucket</h3>
+                <button onclick="closeCreateBucketModal()" class="text-gray-500 hover:text-white">
+                    <i data-lucide="x" class="w-6 h-6"></i>
+                </button>
+            </div>
+            <form onsubmit="createBucket(event)">
+                <div class="mb-5">
+                    <label class="block text-sm text-gray-400 mb-2">Bucket Name</label>
+                    <input type="text" id="bucket-name" required class="input-field w-full" placeholder="my-bucket">
+                </div>
+                <div class="mb-6">
+                    <label class="block text-sm text-gray-400 mb-2">Region</label>
+                    <select id="bucket-region" class="select-field w-full">
+                        <option value="us-east-1">US East (N. Virginia)</option>
+                        <option value="us-west-2">US West (Oregon)</option>
+                        <option value="eu-west-1">EU (Ireland)</option>
+                        <option value="ap-south-1">AP (Mumbai)</option>
+                    </select>
+                </div>
+                <div class="flex gap-3">
+                    <button type="button" onclick="closeCreateBucketModal()" class="btn btn-secondary flex-1">Cancel</button>
+                    <button type="submit" class="btn btn-primary flex-1">Create Bucket</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div id="toast" class="toast hidden"></div>
+
+    <!-- Upload Modal -->
+    <div id="upload-modal" class="modal-overlay hidden">
+        <div class="modal">
+            <div class="flex items-center justify-between mb-6">
+                <h3 class="text-xl font-semibold text-white">Upload Files</h3>
+                <button onclick="closeUploadModal()" class="text-gray-500 hover:text-white">
+                    <i data-lucide="x" class="w-6 h-6"></i>
+                </button>
+            </div>
+            <div id="upload-area" class="border-2 border-dashed border-gray-700 rounded-xl p-8 text-center cursor-pointer" onclick="document.getElementById('upload-input').click()">
+                <i data-lucide="cloud-upload" class="w-16 h-16 text-gray-500 mx-auto mb-4"></i>
+                <p class="text-gray-400 mb-2">Click or drag files to upload</p>
+                <input type="file" id="upload-input" multiple class="hidden" onchange="handleUpload(this.files)">
+            </div>
+            <div id="upload-list" class="mt-4 space-y-2"></div>
+        </div>
+    </div>
+
+    <!-- Preview Modal -->
+    <div id="preview-modal" class="modal-overlay hidden">
+        <div class="modal" style="max-width: 48rem;">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-semibold text-white" id="preview-name">Preview</h3>
+                <button onclick="closePreviewModal()" class="text-gray-500 hover:text-white">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div id="preview-content" class="bg-gray-900 rounded-lg p-4 min-h-64 max-h-96 overflow-auto"></div>
+            <div class="mt-4 flex justify-between">
+                <span class="text-sm text-gray-500" id="preview-info"></span>
+                <button onclick="downloadPreview()" class="btn btn-secondary">Download</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Modal -->
+    <div id="delete-modal" class="modal-overlay hidden">
+        <div class="modal">
+            <h3 class="text-lg font-semibold text-white mb-4">Delete Object</h3>
+            <p class="text-gray-400 mb-6" id="delete-msg">Are you sure you want to delete this object?</p>
+            <div class="flex gap-3">
+                <button onclick="closeDeleteModal()" class="btn btn-secondary flex-1">Cancel</button>
+                <button onclick="confirmDelete()" class="btn btn-danger flex-1">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Replication Modal -->
+    <div id="replication-modal" class="modal-overlay hidden">
+        <div class="modal">
+            <div class="flex items-center justify-between mb-6">
+                <h3 class="text-xl font-semibold text-white">Create Replication Rule</h3>
+                <button onclick="document.getElementById('replication-modal').classList.add('hidden')" class="text-gray-500 hover:text-white">
+                    <i data-lucide="x" class="w-6 h-6"></i>
+                </button>
+            </div>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm text-gray-400 mb-2">Source Bucket</label>
+                    <select id="replication-source-bucket" class="input-field w-full">
+                        <option value="">Select source bucket</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-400 mb-2">Destination Bucket</label>
+                    <select id="replication-dest-bucket" class="input-field w-full">
+                        <option value="">Select destination bucket</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-400 mb-2">Storage Class</label>
+                    <select id="replication-storage-class" class="input-field w-full">
+                        <option value="STANDARD">Standard</option>
+                        <option value="STANDARD_IA">Standard-IA</option>
+                        <option value="INTELLIGENT_TIERING">Intelligent-Tiering</option>
+                        <option value="GLACIER">Glacier</option>
+                    </select>
+                </div>
+                <button onclick="createReplicationRule()" class="btn btn-primary w-full">Create Rule</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Lifecycle Modal -->
+    <div id="lifecycle-modal" class="modal-overlay hidden">
+        <div class="modal">
+            <div class="flex items-center justify-between mb-6">
+                <h3 class="text-xl font-semibold text-white">Create Lifecycle Rule</h3>
+                <button onclick="document.getElementById('lifecycle-modal').classList.add('hidden')" class="text-gray-500 hover:text-white">
+                    <i data-lucide="x" class="w-6 h-6"></i>
+                </button>
+            </div>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm text-gray-400 mb-2">Rule Name</label>
+                    <input type="text" id="lifecycle-rule-name" class="input-field w-full" placeholder="my-lifecycle-rule">
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-400 mb-2">Prefix (optional)</label>
+                    <input type="text" id="lifecycle-prefix" class="input-field w-full" placeholder="e.g., logs/">
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-400 mb-2">Action</label>
+                    <select id="lifecycle-action" class="input-field w-full">
+                        <option value="Delete">Delete after days</option>
+                        <option value="Glacier">Transition to Glacier</option>
+                        <option value="StandardIA">Transition to Standard-IA</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-400 mb-2">Days after creation</label>
+                    <input type="number" id="lifecycle-days" class="input-field w-full" value="30" min="1">
+                </div>
+                <button onclick="createLifecycleRule()" class="btn btn-primary w-full">Create Rule</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create User Modal -->
+    <div id="create-user-modal" class="modal-overlay hidden">
+        <div class="modal">
+            <div class="flex items-center justify-between mb-6">
+                <h3 class="text-xl font-semibold text-white">Create IAM User</h3>
+                <button onclick="document.getElementById('create-user-modal').classList.add('hidden')" class="text-gray-500 hover:text-white">
+                    <i data-lucide="x" class="w-6 h-6"></i>
+                </button>
+            </div>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm text-gray-400 mb-2">Username</label>
+                    <input type="text" id="new-user-name" class="input-field w-full" placeholder="username">
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-400 mb-2">Email (optional)</label>
+                    <input type="email" id="new-user-email" class="input-field w-full" placeholder="user@example.com">
+                </div>
+                <button onclick="createIAMUser()" class="btn btn-primary w-full">Create User</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
     <script>
-        // Fetch bucket count
-        fetch('/_mgmt/buckets')
-            .then(r => r.json())
-            .then(data => {
-                document.getElementById('bucket-count').textContent = data.buckets ? data.buckets.length : '0';
-            })
-            .catch(() => {
-                document.getElementById('bucket-count').textContent = '0';
+        lucide.createIcons();
+
+        let charts = {};
+        let lastRefresh = Date.now();
+        let opsHistory = [];
+
+        document.addEventListener('DOMContentLoaded', () => {
+            initCharts();
+            refreshAll();
+
+            document.querySelectorAll('.sidebar-item').forEach(item => {
+                item.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    switchView(item.dataset.view);
+                });
             });
 
-        // Set uptime
-        const startTime = Date.now();
-        setInterval(() => {
-            const elapsed = Math.floor((Date.now() - startTime) / 1000);
-            const hours = Math.floor(elapsed / 3600);
-            const minutes = Math.floor((elapsed % 3600) / 60);
-            const seconds = elapsed % 60;
-            document.getElementById('uptime').textContent =
-                `${hours}h ${minutes}m ${seconds}s`;
-        }, 1000);
+            setInterval(refreshAll, 8000);
+        });
+
+        function switchView(view) {
+            document.querySelectorAll('.sidebar-item').forEach(item => {
+                item.classList.toggle('active', item.dataset.view === view);
+            });
+
+            document.querySelectorAll('[id^="view-"]').forEach(el => el.classList.add('hidden'));
+
+            const viewEl = document.getElementById(`view-${view}`);
+            if (viewEl) viewEl.classList.remove('hidden');
+
+            const titles = {
+                dashboard: ['Dashboard', 'Real-time system overview'],
+                buckets: ['Buckets', 'Manage your storage buckets'],
+                analytics: ['Analytics', 'Performance metrics'],
+                settings: ['Settings', 'System configuration'],
+                replication: ['Replication', 'Cross-region replication'],
+                lifecycle: ['Lifecycle', 'Object lifecycle policies'],
+                users: ['IAM Users', 'Access management'],
+                objects: ['Objects', 'Browse objects']
+            };
+            document.getElementById('page-title').textContent = titles[view]?.[0] || 'Dashboard';
+            document.getElementById('page-subtitle').textContent = titles[view]?.[1] || '';
+
+            if (view === 'buckets') loadAllBuckets();
+        }
+
+        async function refreshAll() {
+            await Promise.all([loadMetrics(), loadBuckets()]);
+        }
+
+        async function loadMetrics() {
+            try {
+                const response = await fetch('/_mgmt/metrics/json');
+                const data = await response.json();
+
+                const storage = data.storage || {};
+                const ops = data.operations || {};
+                const latency = data.latency || {};
+
+                // Update stats
+                document.getElementById('storage-used').textContent = formatBytes(storage.bytesStored || 0);
+                document.getElementById('total-objects').textContent = formatNumber(storage.objectsTotal || 0);
+                document.getElementById('total-buckets').textContent = storage.bucketsTotal || 0;
+
+                // Storage bar
+                const usedGB = (storage.bytesStored || 0) / (1024 * 1024 * 1024);
+                const totalGB = 10;
+                const percent = Math.min(100, (usedGB / totalGB) * 100);
+                document.getElementById('storage-bar').style.width = percent + '%';
+                document.getElementById('storage-percent').textContent = percent.toFixed(1) + '%';
+                document.getElementById('storage-detail').textContent = `${usedGB.toFixed(2)} GB of ${totalGB} GB`;
+
+                // Operations
+                const totalOps = (ops.getObject || 0) + (ops.putObject || 0) + (ops.deleteObject || 0) + (ops.listObjects || 0);
+                document.getElementById('total-ops').textContent = formatNumber(totalOps);
+                document.getElementById('ops-get').textContent = formatNumber(ops.getObject || 0);
+                document.getElementById('ops-put').textContent = formatNumber(ops.putObject || 0);
+                document.getElementById('ops-delete').textContent = formatNumber(ops.deleteObject || 0);
+                document.getElementById('ops-list').textContent = formatNumber(ops.listObjects || 0);
+
+                // Latency
+                document.getElementById('avg-latency').textContent = formatDuration((latency.p50 || 0) / 1000);
+                document.getElementById('p99-latency').textContent = formatDuration((latency.p99 || 0) / 1000);
+
+                // Rate
+                const now = Date.now();
+                const elapsed = (now - lastRefresh) / 1000;
+                lastRefresh = now;
+                const rate = elapsed > 0 ? Math.round(totalOps / elapsed) : 0;
+                document.getElementById('ops-rate').textContent = `${rate} req/s`;
+                document.getElementById('quick-ops').textContent = Math.round(rate * 60);
+
+                updateCharts(data);
+            } catch (error) {
+                console.error('Metrics error:', error);
+            }
+        }
+
+        async function loadBuckets() {
+            try {
+                const response = await fetch('/_mgmt/buckets');
+                const data = await response.json();
+                const buckets = data.buckets || [];
+
+                const tbody = document.getElementById('buckets-tbody');
+                if (buckets.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" class="text-center text-gray-500 py-8">No buckets yet</td></tr>';
+                } else {
+                    tbody.innerHTML = buckets.slice(0, 5).map(b => `
+                        <tr>
+                            <td><span class="font-medium text-white">${b.Name || b.name}</span></td>
+                            <td class="text-gray-400">${formatNumber(b.ObjectCount || 0)}</td>
+                            <td class="text-gray-400">${formatBytes(b.Size || 0)}</td>
+                            <td><span class="badge badge-info">us-east-1</span></td>
+                            <td class="text-gray-500">${b.Created ? new Date(b.Created).toLocaleDateString() : '-'}</td>
+                            <td>
+                                <button onclick="deleteBucket('${b.Name || b.name}')" class="p-2 hover:bg-red-500/20 rounded-lg text-red-400">
+                                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    `).join('');
+                    lucide.createIcons();
+                }
+            } catch (error) {
+                console.error('Buckets error:', error);
+            }
+        }
+
+        async function loadAllBuckets() {
+            try {
+                const response = await fetch('/_mgmt/buckets');
+                const data = await response.json();
+                const buckets = data.buckets || [];
+
+                const tbody = document.getElementById('all-buckets-tbody');
+                if (buckets.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="8" class="text-center text-gray-500 py-8">No buckets yet</td></tr>';
+                } else {
+                    tbody.innerHTML = buckets.map(b => `
+                        <tr>
+                            <td><span class="font-medium text-white">${b.Name || b.name}</span></td>
+                            <td class="text-gray-400">us-east-1</td>
+                            <td class="text-gray-400">${formatNumber(b.ObjectCount || 0)}</td>
+                            <td class="text-gray-400">${formatBytes(b.Size || 0)}</td>
+                            <td><span class="badge badge-warning">Disabled</span></td>
+                            <td><span class="badge badge-success">AES-256</span></td>
+                            <td class="text-gray-500">${b.Created ? new Date(b.Created).toLocaleDateString() : '-'}</td>
+                            <td>
+                                <div class="flex items-center gap-1">
+                                    <button class="p-2 hover:bg-blue-500/20 rounded-lg text-blue-400"><i data-lucide="folder-open" class="w-4 h-4"></i></button>
+                                    <button class="p-2 hover:bg-gray-700 rounded-lg text-gray-400"><i data-lucide="settings" class="w-4 h-4"></i></button>
+                                    <button onclick="deleteBucket('${b.Name || b.name}')" class="p-2 hover:bg-red-500/20 rounded-lg text-red-400"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                                </div>
+                            </td>
+                        </tr>
+                    `).join('');
+                    lucide.createIcons();
+                }
+            } catch (error) {
+                console.error('All buckets error:', error);
+            }
+        }
+
+        function initCharts() {
+            const storageCtx = document.getElementById('storageChart');
+            if (storageCtx) {
+                charts.storage = new Chart(storageCtx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['Used', 'Available'],
+                        datasets: [{
+                            data: [0, 100],
+                            backgroundColor: ['#3b82f6', '#1e293b'],
+                            borderWidth: 0,
+                            cutout: '75%'
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        animation: { animateRotate: true, animateScale: true }
+                    }
+                });
+            }
+
+            const opsCtx = document.getElementById('opsChart');
+            if (opsCtx) {
+                charts.ops = new Chart(opsCtx, {
+                    type: 'line',
+                    data: {
+                        labels: [],
+                        datasets: [
+                            { label: 'GetObject', data: [], borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.1)', fill: true, tension: 0.4 },
+                            { label: 'PutObject', data: [], borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.1)', fill: true, tension: 0.4 },
+                            { label: 'DeleteObject', data: [], borderColor: '#ef4444', backgroundColor: 'rgba(239, 68, 68, 0.1)', fill: true, tension: 0.4 }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { position: 'top', labels: { color: '#9ca3af', boxWidth: 12 } } },
+                        scales: {
+                            x: { grid: { color: 'rgba(255,255,255,0.03)' }, ticks: { color: '#6b7280' } },
+                            y: { grid: { color: 'rgba(255,255,255,0.03)' }, ticks: { color: '#6b7280' } }
+                        }
+                    }
+                });
+            }
+        }
+
+        function updateCharts(data) {
+            if (charts.storage && data.storage) {
+                const used = data.storage.bytesStored || 0;
+                const total = 10 * 1024 * 1024 * 1024;
+                charts.storage.data.datasets[0].data = [used, Math.max(0, total - used)];
+                charts.storage.update();
+            }
+
+            if (charts.ops && data.operations) {
+                const ops = data.operations;
+                const time = new Date().toLocaleTimeString();
+                opsHistory.push({
+                    time,
+                    get: ops.getObject || 0,
+                    put: ops.putObject || 0,
+                    delete: ops.deleteObject || 0
+                });
+                if (opsHistory.length > 12) opsHistory.shift();
+
+                charts.ops.data.labels = opsHistory.map(h => h.time);
+                charts.ops.data.datasets[0].data = opsHistory.map(h => h.get);
+                charts.ops.data.datasets[1].data = opsHistory.map(h => h.put);
+                charts.ops.data.datasets[2].data = opsHistory.map(h => h.delete);
+                charts.ops.update();
+            }
+        }
+
+        function showCreateBucketModal() {
+            document.getElementById('create-bucket-modal').classList.remove('hidden');
+            document.getElementById('bucket-name').focus();
+        }
+
+        function closeCreateBucketModal() {
+            document.getElementById('create-bucket-modal').classList.add('hidden');
+            document.getElementById('bucket-name').value = '';
+        }
+
+        async function createBucket(e) {
+            e.preventDefault();
+            const name = document.getElementById('bucket-name').value.trim();
+            if (!name) return;
+
+            try {
+                const response = await fetch('/_mgmt/buckets', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name })
+                });
+
+                if (response.ok) {
+                    showToast(`Bucket "${name}" created`, 'success');
+                    closeCreateBucketModal();
+                    refreshAll();
+                } else {
+                    const err = await response.json();
+                    showToast(err.error || 'Failed to create', 'error');
+                }
+            } catch (error) {
+                showToast('Error creating bucket', 'error');
+            }
+        }
+
+        async function deleteBucket(name) {
+            if (!confirm(`Delete bucket "${name}"?`)) return;
+
+            try {
+                const response = await fetch(`/_mgmt/buckets/${name}`, { method: 'DELETE' });
+                if (response.ok) {
+                    showToast(`Bucket "${name}" deleted`, 'success');
+                    refreshAll();
+                } else {
+                    showToast('Failed to delete', 'error');
+                }
+            } catch (error) {
+                showToast('Error deleting bucket', 'error');
+            }
+        }
+
+        function showToast(message, type) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = `toast ${type}`;
+            toast.classList.remove('hidden');
+            setTimeout(() => toast.classList.add('hidden'), 3500);
+        }
+
+        function formatBytes(bytes) {
+            if (!bytes) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        function formatNumber(num) {
+            return new Intl.NumberFormat().format(num || 0);
+        }
+
+        function formatDuration(seconds) {
+            if (!seconds || seconds < 0.001) return '<1ms';
+            if (seconds < 1) return (seconds * 1000).toFixed(1) + 'ms';
+            return seconds.toFixed(2) + 's';
+        }
+
+        // Objects Browser
+        let currentObjectBucket = '';
+        let currentObjectPrefix = '';
+        let deleteTarget = null;
+
+        async function loadBucketSelect() {
+            try {
+                const response = await fetch('/_mgmt/buckets');
+                const data = await response.json();
+                const buckets = data.buckets || [];
+                const select = document.getElementById('object-bucket-select');
+                select.innerHTML = '<option value="">Select a bucket</option>' +
+                    buckets.map(b => `<option value="${b.Name || b.name}">${b.Name || b.name}</option>`).join('');
+            } catch (error) {
+                console.error('Error loading buckets:', error);
+            }
+        }
+
+        async function loadObjects() {
+            const bucket = document.getElementById('object-bucket-select').value;
+            const container = document.getElementById('objects-container');
+            const uploadBtn = document.getElementById('upload-btn');
+            const uploadZone = document.getElementById('upload-zone');
+
+            if (!bucket) {
+                container.innerHTML = '<p class="text-gray-500 text-center py-12">Select a bucket to view objects</p>';
+                uploadBtn.style.display = 'none';
+                uploadZone.classList.add('hidden');
+                return;
+            }
+
+            currentObjectBucket = bucket;
+            uploadBtn.style.display = 'flex';
+            uploadZone.classList.remove('hidden');
+
+            try {
+                const response = await fetch(`/_mgmt/buckets/${bucket}/objects?max-keys=1000`);
+                const data = await response.json();
+
+                const prefixes = data.CommonPrefixes || [];
+                const objects = data.Contents || [];
+
+                if (prefixes.length === 0 && objects.length === 0) {
+                    container.innerHTML = `
+                        <div class="text-center py-12 text-gray-500">
+                            <i data-lucide="folder-open" class="w-16 h-16 mx-auto mb-4 opacity-30"></i>
+                            <p>No objects in this bucket</p>
+                            <p class="text-xs text-gray-600 mt-2">Upload files to get started</p>
+                        </div>`;
+                    lucide.createIcons();
+                    return;
+                }
+
+                let html = '<table class="data-table"><thead><tr><th>Name</th><th>Size</th><th>Modified</th><th>Actions</th></tr></thead><tbody>';
+
+                prefixes.forEach(p => {
+                    const name = p.Prefix.split('/').slice(-2)[0];
+                    html += `<tr class="hover:bg-gray-800/50 cursor-pointer" onclick="navigateFolder('${p.Prefix}')">
+                        <td><div class="flex items-center gap-3"><i data-lucide="folder" class="w-5 h-5 text-blue-400"></i><span class="text-white">${name}/</span></div></td>
+                        <td class="text-gray-500">-</td>
+                        <td class="text-gray-500">-</td>
+                        <td></td>
+                    </tr>`;
+                });
+
+                objects.forEach(obj => {
+                    const name = obj.Key.split('/').pop();
+                    html += `<tr>
+                        <td><div class="flex items-center gap-3"><i data-lucide="file" class="w-5 h-5 text-gray-500"></i><span class="text-white">${name}</span></div></td>
+                        <td class="text-gray-400">${formatBytes(obj.Size)}</td>
+                        <td class="text-gray-500">${obj.LastModified ? new Date(obj.LastModified).toLocaleString() : '-'}</td>
+                        <td>
+                            <div class="flex items-center gap-1">
+                                <button onclick="event.stopPropagation(); previewObject('${obj.Key}')" class="p-2 hover:bg-gray-700 rounded-lg" title="Preview"><i data-lucide="eye" class="w-4 h-4 text-gray-400"></i></button>
+                                <button onclick="event.stopPropagation(); downloadObject('${obj.Key}')" class="p-2 hover:bg-gray-700 rounded-lg" title="Download"><i data-lucide="download" class="w-4 h-4 text-gray-400"></i></button>
+                                <button onclick="event.stopPropagation(); copyObjectUrl('${obj.Key}')" class="p-2 hover:bg-gray-700 rounded-lg" title="Copy URL"><i data-lucide="link" class="w-4 h-4 text-gray-400"></i></button>
+                                <button onclick="event.stopPropagation(); deleteObject('${obj.Key}')" class="p-2 hover:bg-red-500/20 rounded-lg" title="Delete"><i data-lucide="trash-2" class="w-4 h-4 text-red-400"></i></button>
+                            </div>
+                        </td>
+                    </tr>`;
+                });
+
+                html += '</tbody></table>';
+                container.innerHTML = html;
+                lucide.createIcons();
+
+            } catch (error) {
+                container.innerHTML = `<p class="text-red-400 text-center py-12">Error: ${error.message}</p>`;
+            }
+        }
+
+        function navigateFolder(prefix) {
+            currentObjectPrefix = prefix;
+            loadObjects();
+        }
+
+        async function previewObject(key) {
+            const modal = document.getElementById('preview-modal');
+            const content = document.getElementById('preview-content');
+            const nameEl = document.getElementById('preview-name');
+            const infoEl = document.getElementById('preview-info');
+
+            nameEl.textContent = key.split('/').pop();
+            content.innerHTML = '<div class="text-center py-12 text-gray-500"><div class="spinner mx-auto mb-2"></div><p>Loading...</p></div>';
+            infoEl.textContent = '';
+            modal.classList.remove('hidden');
+
+            try {
+                const response = await fetch(`/_mgmt/buckets/${currentObjectBucket}/objects/${encodeURIComponent(key)}`);
+                const blob = await response.blob();
+                infoEl.textContent = `${blob.type || 'Unknown type'} - ${formatBytes(blob.size)}`;
+
+                if (blob.type.startsWith('image/')) {
+                    const url = URL.createObjectURL(blob);
+                    content.innerHTML = `<img src="${url}" class="max-w-full max-h-80 mx-auto rounded">`;
+                } else if (blob.type.startsWith('text/') || blob.type === 'application/json') {
+                    const text = await blob.text();
+                    const truncated = text.length > 50000 ? text.substring(0, 50000) + '...' : text;
+                    content.innerHTML = `<pre class="text-sm text-gray-300 whitespace-pre-wrap font-mono">${escapeHtml(truncated)}</pre>`;
+                } else {
+                    content.innerHTML = `<div class="text-center py-12 text-gray-500"><i data-lucide="file" class="w-16 h-16 mx-auto mb-4"></i><p>Preview not available</p></div>`;
+                    lucide.createIcons();
+                }
+            } catch (error) {
+                content.innerHTML = `<p class="text-red-400 text-center py-12">Error: ${error.message}</p>`;
+            }
+        }
+
+        function closePreviewModal() {
+            document.getElementById('preview-modal').classList.add('hidden');
+        }
+
+        function downloadObject(key) {
+            window.open(`/s3/${currentObjectBucket}/${key}`, '_blank');
+        }
+
+        function copyObjectUrl(key) {
+            const url = `${window.location.origin}/s3/${currentObjectBucket}/${key}`;
+            navigator.clipboard.writeText(url);
+            showToast('URL copied to clipboard', 'success');
+        }
+
+        function deleteObject(key) {
+            deleteTarget = key;
+            document.getElementById('delete-msg').textContent = `Are you sure you want to delete "${key.split('/').pop()}"?`;
+            document.getElementById('delete-modal').classList.remove('hidden');
+        }
+
+        function closeDeleteModal() {
+            document.getElementById('delete-modal').classList.add('hidden');
+            deleteTarget = null;
+        }
+
+        async function confirmDelete() {
+            if (!deleteTarget) return;
+            try {
+                const response = await fetch(`/_mgmt/buckets/${currentObjectBucket}/objects/${encodeURIComponent(deleteTarget)}`, { method: 'DELETE' });
+                if (response.ok) {
+                    showToast('Object deleted', 'success');
+                    closeDeleteModal();
+                    loadObjects();
+                } else {
+                    showToast('Failed to delete', 'error');
+                }
+            } catch (error) {
+                showToast('Error deleting object', 'error');
+            }
+        }
+
+        function showUploadModal() {
+            document.getElementById('upload-modal').classList.remove('hidden');
+        }
+
+        function closeUploadModal() {
+            document.getElementById('upload-modal').classList.add('hidden');
+            document.getElementById('upload-list').innerHTML = '';
+        }
+
+        async function handleUpload(files) {
+            if (!files.length || !currentObjectBucket) return;
+
+            for (const file of files) {
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('key', file.name);
+
+                try {
+                    const response = await fetch(`/_mgmt/buckets/${currentObjectBucket}/objects`, {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    if (response.ok) {
+                        showToast(`Uploaded: ${file.name}`, 'success');
+                    } else {
+                        showToast(`Failed: ${file.name}`, 'error');
+                    }
+                } catch (error) {
+                    showToast(`Error: ${file.name}`, 'error');
+                }
+            }
+
+            closeUploadModal();
+            loadObjects();
+        }
+
+        function downloadPreview() {
+            if (deleteTarget) downloadObject(deleteTarget);
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Update switchView to load bucket select
+        const originalSwitchView = switchView;
+        switchView = function(view) {
+            originalSwitchView(view);
+            if (view === 'objects') loadBucketSelect();
+            if (view === 'buckets') loadAllBuckets();
+            if (view === 'replication') loadReplicationData();
+            if (view === 'lifecycle') loadLifecycleData();
+            if (view === 'users') loadIAMUsers();
+        }
+
+        // ==================== Replication Functions ====================
+        let replicationBuckets = [];
+
+        async function loadReplicationData() {
+            const bucketSelect = document.getElementById('replication-bucket-select');
+            if (!bucketSelect) return;
+
+            try {
+                const response = await fetch('/_mgmt/buckets');
+                const data = await response.json();
+                replicationBuckets = data.buckets || [];
+                bucketSelect.innerHTML = '<option value="">Select a bucket</option>' +
+                    replicationBuckets.map(b => `<option value="${b.Name || b.name}">${b.Name || b.name}</option>`).join('');
+            } catch (error) {
+                console.error('Error loading buckets:', error);
+            }
+        }
+
+        async function loadReplicationRules() {
+            const bucket = document.getElementById('replication-bucket-select')?.value;
+            if (!bucket) {
+                document.getElementById('replication-rules-container').innerHTML =
+                    '<div class="text-center py-12 text-gray-500"><p>Select a bucket to view replication rules</p></div>';
+                return;
+            }
+
+            try {
+                const response = await fetch(`/_mgmt/replication/${bucket}`);
+                const data = await response.json();
+                const container = document.getElementById('replication-rules-container');
+
+                if (!data.rules || data.rules.length === 0) {
+                    container.innerHTML = `
+                        <div class="text-center py-12 text-gray-500">
+                            <i data-lucide="refresh-cw" class="w-16 h-16 mx-auto mb-4 opacity-30"></i>
+                            <p>No replication rules configured</p>
+                            <p class="text-xs text-gray-600 mt-2">Configure cross-region replication to replicate objects automatically</p>
+                        </div>`;
+                    lucide.createIcons();
+                    return;
+                }
+
+                let html = '<table class="data-table"><thead><tr><th>Rule Name</th><th>Status</th><th>Destination</th><th>Priority</th><th>Actions</th></tr></thead><tbody>';
+                data.rules.forEach(rule => {
+                    html += `<tr>
+                        <td class="text-white">${rule.Name || rule.ID}</td>
+                        <td><span class="badge ${rule.Status === 'Enabled' ? 'badge-success' : 'badge-warning'}">${rule.Status}</span></td>
+                        <td class="text-gray-400">${rule.Destination?.Bucket || '-'}</td>
+                        <td class="text-gray-400">${rule.Priority || 0}</td>
+                        <td>
+                            <button onclick="deleteReplicationRule('${bucket}', '${rule.ID}')" class="p-2 hover:bg-red-500/20 rounded-lg">
+                                <i data-lucide="trash-2" class="w-4 h-4 text-red-400"></i>
+                            </button>
+                        </td>
+                    </tr>`;
+                });
+                html += '</tbody></table>';
+                container.innerHTML = html;
+                lucide.createIcons();
+            } catch (error) {
+                console.error('Error loading replication rules:', error);
+            }
+        }
+
+        async function createReplicationRule() {
+            const bucket = document.getElementById('replication-bucket-select')?.value;
+            const destBucket = document.getElementById('replication-dest-bucket')?.value;
+
+            if (!bucket || !destBucket) {
+                showToast('Please select source and destination buckets', 'error');
+                return;
+            }
+
+            const rule = {
+                Name: `replication-rule-${Date.now()}`,
+                Status: 'Enabled',
+                Priority: 1,
+                Filter: { Prefix: '' },
+                Destination: {
+                    Bucket: destBucket,
+                    StorageClass: 'STANDARD'
+                },
+                DeleteMarkerReplication: { Status: 'Enabled' }
+            };
+
+            try {
+                const response = await fetch(`/_mgmt/replication/${bucket}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ rules: [rule] })
+                });
+
+                if (response.ok) {
+                    showToast('Replication rule created', 'success');
+                    loadReplicationRules();
+                } else {
+                    showToast('Failed to create replication rule', 'error');
+                }
+            } catch (error) {
+                showToast('Error creating replication rule', 'error');
+            }
+        }
+
+        async function deleteReplicationRule(bucket, ruleId) {
+            if (!confirm('Are you sure you want to delete this replication rule?')) return;
+
+            try {
+                const response = await fetch(`/_mgmt/replication/${bucket}`, { method: 'DELETE' });
+                if (response.ok) {
+                    showToast('Replication rule deleted', 'success');
+                    loadReplicationRules();
+                } else {
+                    showToast('Failed to delete replication rule', 'error');
+                }
+            } catch (error) {
+                showToast('Error deleting replication rule', 'error');
+            }
+        }
+
+        // ==================== Lifecycle Functions ====================
+        let lifecycleBucket = '';
+
+        async function loadLifecycleData() {
+            const bucketSelect = document.getElementById('lifecycle-bucket-select');
+            if (!bucketSelect) return;
+
+            try {
+                const response = await fetch('/_mgmt/buckets');
+                const data = await response.json();
+                const buckets = data.buckets || [];
+                bucketSelect.innerHTML = '<option value="">Select a bucket</option>' +
+                    buckets.map(b => `<option value="${b.Name || b.name}">${b.Name || b.name}</option>`).join('');
+            } catch (error) {
+                console.error('Error loading buckets:', error);
+            }
+        }
+
+        async function loadLifecycleRules() {
+            const bucket = document.getElementById('lifecycle-bucket-select')?.value;
+            if (!bucket) {
+                document.getElementById('lifecycle-rules-container').innerHTML =
+                    '<div class="text-center py-12 text-gray-500"><p>Select a bucket to view lifecycle rules</p></div>';
+                return;
+            }
+
+            lifecycleBucket = bucket;
+
+            try {
+                const response = await fetch(`/_mgmt/lifecycle/${bucket}`);
+                const data = await response.json();
+                const container = document.getElementById('lifecycle-rules-container');
+
+                if (!data.rules || data.rules.length === 0) {
+                    container.innerHTML = `
+                        <div class="text-center py-12 text-gray-500">
+                            <i data-lucide="clock" class="w-16 h-16 mx-auto mb-4 opacity-30"></i>
+                            <p>No lifecycle rules configured</p>
+                            <p class="text-xs text-gray-600 mt-2">Automatically transition objects to different storage classes</p>
+                        </div>`;
+                    lucide.createIcons();
+                    return;
+                }
+
+                let html = '<table class="data-table"><thead><tr><th>Rule Name</th><th>Status</th><th>Filter</th><th>Action</th><th></th></tr></thead><tbody>';
+                data.rules.forEach(rule => {
+                    const actions = rule.Actions?.map(a => `${a.Name} (${a.Days || '-'} days)`).join(', ') || '-';
+                    html += `<tr>
+                        <td class="text-white">${rule.Name || rule.ID}</td>
+                        <td><span class="badge ${rule.Status === 'Enabled' ? 'badge-success' : 'badge-warning'}">${rule.Status}</span></td>
+                        <td class="text-gray-400">${rule.Filter?.Prefix || '*'}</td>
+                        <td class="text-gray-400">${actions}</td>
+                        <td>
+                            <button onclick="deleteLifecycleRule('${bucket}', '${rule.ID}')" class="p-2 hover:bg-red-500/20 rounded-lg">
+                                <i data-lucide="trash-2" class="w-4 h-4 text-red-400"></i>
+                            </button>
+                        </td>
+                    </tr>`;
+                });
+                html += '</tbody></table>';
+                container.innerHTML = html;
+                lucide.createIcons();
+            } catch (error) {
+                console.error('Error loading lifecycle rules:', error);
+            }
+        }
+
+        async function createLifecycleRule() {
+            const bucket = document.getElementById('lifecycle-bucket-select')?.value;
+            const ruleName = document.getElementById('lifecycle-rule-name')?.value;
+            const action = document.getElementById('lifecycle-action')?.value;
+            const days = parseInt(document.getElementById('lifecycle-days')?.value || '30');
+            const prefix = document.getElementById('lifecycle-prefix')?.value || '';
+
+            if (!bucket || !ruleName || !action) {
+                showToast('Please fill in all required fields', 'error');
+                return;
+            }
+
+            const rule = {
+                ID: `rule-${Date.now()}`,
+                Name: ruleName,
+                Status: 'Enabled',
+                Priority: 1,
+                Filter: { Prefix: prefix },
+                Actions: [{
+                    Name: action === 'Delete' ? 'Expiration' : 'Transition',
+                    Days: days,
+                    StorageClass: action === 'Glacier' ? 'GLACIER' : action === 'StandardIA' ? 'STANDARD_IA' : null
+                }]
+            };
+
+            try {
+                // First get existing rules
+                let existingRules = [];
+                try {
+                    const getResp = await fetch(`/_mgmt/lifecycle/${bucket}`);
+                    if (getResp.ok) {
+                        const data = await getResp.json();
+                        existingRules = data.rules || [];
+                    }
+                } catch (e) {}
+
+                existingRules.push(rule);
+
+                const response = await fetch(`/_mgmt/lifecycle/${bucket}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ rules: existingRules })
+                });
+
+                if (response.ok) {
+                    showToast('Lifecycle rule created', 'success');
+                    loadLifecycleRules();
+                } else {
+                    showToast('Failed to create lifecycle rule', 'error');
+                }
+            } catch (error) {
+                showToast('Error creating lifecycle rule', 'error');
+            }
+        }
+
+        async function deleteLifecycleRule(bucket, ruleId) {
+            if (!confirm('Are you sure you want to delete this lifecycle rule?')) return;
+
+            try {
+                const response = await fetch(`/_mgmt/lifecycle/${bucket}`, { method: 'DELETE' });
+                if (response.ok) {
+                    showToast('Lifecycle rule deleted', 'success');
+                    loadLifecycleRules();
+                } else {
+                    showToast('Failed to delete lifecycle rule', 'error');
+                }
+            } catch (error) {
+                showToast('Error deleting lifecycle rule', 'error');
+            }
+        }
+
+        // ==================== IAM Users Functions ====================
+        async function loadIAMUsers() {
+            try {
+                const response = await fetch('/_mgmt/iam/users');
+                const data = await response.json();
+                const tbody = document.getElementById('users-tbody');
+
+                if (!data.users || data.users.length === 0) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="5" class="text-center py-8 text-gray-500">No users found</td>
+                        </tr>`;
+                    return;
+                }
+
+                let html = '';
+                data.users.forEach(user => {
+                    const accessKey = user.AccessKeys?.[0]?.ID || '-';
+                    const created = user.CreatedAt ? new Date(user.CreatedAt).toLocaleDateString() : '-';
+                    html += `<tr>
+                        <td><span class="font-medium text-white">${user.Username || user.Name}</span></td>
+                        <td class="text-gray-400 font-mono text-sm">${accessKey}</td>
+                        <td><span class="badge ${user.Status === 'active' ? 'badge-success' : 'badge-warning'}">${user.Status || 'Active'}</span></td>
+                        <td class="text-gray-500">${created}</td>
+                        <td>
+                            <button onclick="showCreateKeyModal('${user.ID}')" class="p-2 hover:bg-gray-700 rounded-lg" title="Create Key">
+                                <i data-lucide="key" class="w-4 h-4 text-gray-400"></i>
+                            </button>
+                            <button onclick="deleteIAMUser('${user.ID}')" class="p-2 hover:bg-red-500/20 rounded-lg" title="Delete">
+                                <i data-lucide="trash-2" class="w-4 h-4 text-red-400"></i>
+                            </button>
+                        </td>
+                    </tr>`;
+                });
+                tbody.innerHTML = html;
+                lucide.createIcons();
+            } catch (error) {
+                console.error('Error loading IAM users:', error);
+            }
+        }
+
+        async function createIAMUser() {
+            const username = document.getElementById('new-user-name')?.value;
+            const email = document.getElementById('new-user-email')?.value;
+
+            if (!username) {
+                showToast('Username is required', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch('/_mgmt/iam/users', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, email })
+                });
+
+                if (response.ok) {
+                    showToast('User created successfully', 'success');
+                    loadIAMUsers();
+                    document.getElementById('new-user-name').value = '';
+                    document.getElementById('new-user-email').value = '';
+                } else {
+                    showToast('Failed to create user', 'error');
+                }
+            } catch (error) {
+                showToast('Error creating user', 'error');
+            }
+        }
+
+        async function deleteIAMUser(userId) {
+            if (!confirm('Are you sure you want to delete this user?')) return;
+
+            try {
+                const response = await fetch(`/_mgmt/iam/users/${userId}`, { method: 'DELETE' });
+                if (response.ok) {
+                    showToast('User deleted', 'success');
+                    loadIAMUsers();
+                } else {
+                    showToast('Failed to delete user', 'error');
+                }
+            } catch (error) {
+                showToast('Error deleting user', 'error');
+            }
+        }
+
+        function showCreateKeyModal(userId) {
+            createIAMKey(userId);
+        }
+
+        async function createIAMKey(userId) {
+            try {
+                const response = await fetch(`/_mgmt/iam/users/${userId}/keys`, { method: 'POST' });
+                if (response.ok) {
+                    const data = await response.json();
+                    showToast(`Access Key: ${data.id || data.AccessKeyID}`, 'success');
+                    loadIAMUsers();
+                } else {
+                    showToast('Failed to create access key', 'error');
+                }
+            } catch (error) {
+                showToast('Error creating access key', 'error');
+            }
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                closeCreateBucketModal();
+                closeUploadModal();
+                closePreviewModal();
+                closeDeleteModal();
+            }
+        });
     </script>
 </body>
 </html>

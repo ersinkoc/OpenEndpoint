@@ -343,10 +343,11 @@ type DeduplicationWriter struct {
 	key       string
 	buf       *bytes.Buffer
 	threshold int
+	logger    *zap.Logger
 }
 
 // NewDeduplicationWriter creates a new deduplication writer
-func NewDeduplicationWriter(w io.Writer, dedup *Deduplicator, bucket, key string, threshold int) *DeduplicationWriter {
+func NewDeduplicationWriter(w io.Writer, dedup *Deduplicator, bucket, key string, threshold int, logger *zap.Logger) *DeduplicationWriter {
 	return &DeduplicationWriter{
 		writer:    w,
 		dedup:     dedup,
@@ -354,6 +355,7 @@ func NewDeduplicationWriter(w io.Writer, dedup *Deduplicator, bucket, key string
 		key:       key,
 		buf:       new(bytes.Buffer),
 		threshold: threshold,
+		logger:    logger,
 	}
 }
 

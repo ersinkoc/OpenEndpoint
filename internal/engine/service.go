@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/openendpoint/openendpoint/internal/metadata"
 	"github.com/openendpoint/openendpoint/internal/storage"
+	"github.com/openendpoint/openendpoint/internal/telemetry"
 	"go.uber.org/zap"
 )
 
@@ -108,6 +109,16 @@ func (s *ObjectService) PutObject(ctx context.Context, bucket, key string, data 
 		s.logger.Error("failed to save metadata", zap.Error(err))
 	}
 
+	// Update telemetry metrics
+	start := time.Now()
+	telemetry.IncStorageBytes(size)
+	telemetry.IncBucketObjects(bucket)
+	telemetry.IncOperation("PutObject")
+	telemetry.OperationsTotal.WithLabelValues("PutObject", "success").Inc()
+	telemetry.OperationDuration.WithLabelValues("PutObject", "success").Observe(time.Since(start).Seconds())
+	telemetry.UpdateDashboardMetrics(size, 0)
+	telemetry.UpdateLatency("PutObject", time.Since(start).Seconds())
+
 	return &ObjectResult{
 		ETag:         etag,
 		Size:         size,
@@ -146,7 +157,7 @@ func (s *ObjectService) CopyObject(ctx context.Context, srcBucket, srcKey, dstBu
 	}
 
 	// Get source object data
-	data, err := s.data.GetObject(ctx, srcBucket, srcKey)
+	data, err := s.storage.Get(ctx, srcBucket, srcKey, storage.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to read source object: %w", err)
 	}
@@ -169,7 +180,14 @@ func (s *ObjectService) CopyObject(ctx context.Context, srcBucket, srcKey, dstBu
 	}
 
 	// Write data to destination
-	if err := s.data.PutObject(ctx, dstBucket, dstKey, data); err != nil {
+	putOpts := storage.PutOptions{
+		ContentType:     srcMeta.ContentType,
+		ContentEncoding: srcMeta.ContentEncoding,
+		CacheControl:    srcMeta.CacheControl,
+		Metadata:        srcMeta.Metadata,
+		StorageClass:    srcMeta.StorageClass,
+	}
+	if err := s.storage.Put(ctx, dstBucket, dstKey, data, srcMeta.Size, putOpts); err != nil {
 		return nil, fmt.Errorf("failed to write destination object: %w", err)
 	}
 
@@ -217,6 +235,14 @@ func (s *ObjectService) GetObject(ctx context.Context, bucket, key string, opts 
 		return nil, fmt.Errorf("failed to get object: %w", err)
 	}
 
+	// Update telemetry metrics
+	start := time.Now()
+	telemetry.IncOperation("GetObject")
+	telemetry.OperationsTotal.WithLabelValues("GetObject", "success").Inc()
+	telemetry.OperationDuration.WithLabelValues("GetObject", "success").Observe(time.Since(start).Seconds())
+	telemetry.UpdateLatency("GetObject", time.Since(start).Seconds())
+	// Note: actual bytes downloaded would be tracked when the reader is read
+
 	return &GetObjectResult{
 		Body:         reader,
 		Size:         meta.Size,
@@ -249,6 +275,12 @@ func (s *ObjectService) DeleteObject(ctx context.Context, bucket, key string, op
 		s.logger.Warn("failed to delete metadata", zap.Error(err))
 	}
 
+	// Update telemetry metrics
+	telemetry.DecBucketObjects(bucket)
+	telemetry.IncOperation("DeleteObject")
+	telemetry.OperationsTotal.WithLabelValues("DeleteObject", "success").Inc()
+	telemetry.OperationDuration.WithLabelValues("DeleteObject", "success").Observe(0) // Quick operation
+
 	return nil
 }
 
@@ -270,6 +302,9 @@ func (s *ObjectService) HeadObject(ctx context.Context, bucket, key string) (*Ob
 	if err != nil {
 		return nil, fmt.Errorf("object not found: %s/%s", bucket, key)
 	}
+
+	// Update telemetry metrics
+	telemetry.OperationsTotal.WithLabelValues("HeadObject", "success").Inc()
 
 	return &ObjectInfo{
 		Key:             key,
@@ -412,6 +447,12 @@ func (s *ObjectService) ListObjects(ctx context.Context, bucket string, opts Lis
 		return nil, fmt.Errorf("failed to list objects: %w", err)
 	}
 
+	// Update telemetry metrics
+	start := time.Now()
+	telemetry.IncOperation("ListObjects")
+	telemetry.OperationsTotal.WithLabelValues("ListObjects", "success").Inc()
+	telemetry.OperationDuration.WithLabelValues("ListObjects", "success").Observe(time.Since(start).Seconds())
+
 	// Convert to results
 	var objectInfos []ObjectInfo
 	for _, obj := range result.Objects {
@@ -457,6 +498,9 @@ func (s *ObjectService) CreateBucket(ctx context.Context, bucket string) error {
 		return fmt.Errorf("failed to create bucket metadata: %w", err)
 	}
 
+	// Update telemetry metrics
+	telemetry.SetStorageBuckets(0) // This will be updated by ListBuckets
+
 	return nil
 }
 
@@ -482,6 +526,9 @@ func (s *ObjectService) DeleteBucket(ctx context.Context, bucket string) error {
 		s.logger.Warn("failed to delete bucket metadata", zap.Error(err))
 	}
 
+	// Update telemetry metrics
+	telemetry.DeleteBucketMetrics(bucket)
+
 	return nil
 }
 
@@ -492,6 +539,9 @@ func (s *ObjectService) ListBuckets(ctx context.Context) ([]BucketInfo, error) {
 		return nil, fmt.Errorf("failed to list buckets: %w", err)
 	}
 
+	// Update telemetry metrics
+	telemetry.SetStorageBuckets(int64(len(buckets)))
+
 	var results []BucketInfo
 	for _, bucket := range buckets {
 		results = append(results, BucketInfo{
@@ -501,6 +551,11 @@ func (s *ObjectService) ListBuckets(ctx context.Context) ([]BucketInfo, error) {
 	}
 
 	return results, nil
+}
+
+// GetBucket retrieves bucket metadata
+func (s *ObjectService) GetBucket(ctx context.Context, bucket string) (*metadata.BucketMetadata, error) {
+	return s.metadata.GetBucket(ctx, bucket)
 }
 
 // CreateMultipartUpload initiates a multipart upload
@@ -1167,6 +1222,7 @@ type GetObjectResult struct {
 	Metadata     map[string]string
 	LastModified int64
 	VersionID    string
+	StorageClass string
 }
 
 // Options for DeleteObject
@@ -1186,6 +1242,7 @@ type ObjectInfo struct {
 	StorageClass    string
 	LastModified    int64
 	VersionID       string
+	IsLatest        bool
 }
 
 // Options for ListObjects

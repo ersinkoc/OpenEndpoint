@@ -536,6 +536,15 @@
                     <div class="breadcrumb" id="breadcrumb"></div>
                 </div>
                 <div class="flex items-center gap-2">
+                    <!-- Search -->
+                    <div class="relative" id="search-container" style="display: none;">
+                        <input type="text" id="object-search"
+                            class="w-48 px-3 py-1.5 pl-8 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
+                            placeholder="Filter objects..." oninput="filterObjects(this.value)">
+                        <svg class="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                        </svg>
+                    </div>
                     <button onclick="refreshObjects()" class="btn btn-ghost">
                         <i data-lucide="rotate-cw" class="w-4 h-4"></i>
                     </button>
@@ -642,6 +651,37 @@
         </div>
     </div>
 
+    <!-- Preview Modal -->
+    <div id="preview-modal" class="modal-overlay" style="display: none;">
+        <div class="modal" style="max-width: 48rem;">
+            <div class="modal-header flex items-center justify-between">
+                <h3 class="text-lg font-semibold text-white" id="preview-title">Preview</h3>
+                <button onclick="closePreviewModal()" class="btn btn-ghost p-1">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div id="preview-content" class="bg-zinc-900 rounded-lg p-4 min-h-48 max-h-96 overflow-auto">
+                    <div class="flex items-center justify-center h-48 text-zinc-500">
+                        <div class="text-center">
+                            <div class="spinner mx-auto mb-2"></div>
+                            <p>Loading preview...</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-4 flex items-center justify-between text-sm">
+                    <span class="text-zinc-500" id="preview-info"></span>
+                    <div class="flex gap-2">
+                        <button onclick="downloadCurrentPreview()" class="btn btn-secondary text-sm">
+                            <i data-lucide="download" class="w-4 h-4"></i>
+                            Download
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast -->
     <div id="toast" class="toast" style="display: none;"></div>
 
@@ -652,9 +692,18 @@
         let currentBucket = null;
         let currentPrefix = '';
         let deleteTarget = null;
+        let allObjects = [];  // Store all objects for filtering
+        let allPrefixes = []; // Store all prefixes for filtering
 
         // Initialize
         loadBuckets();
+
+        // Check URL for bucket parameter
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlBucket = urlParams.get('bucket');
+        if (urlBucket) {
+            setTimeout(() => navigateToBucket(urlBucket), 500);
+        }
 
         async function loadBuckets() {
             const container = document.getElementById('buckets-list');
@@ -690,11 +739,17 @@
         function navigateToBucket(bucket) {
             currentBucket = bucket;
             currentPrefix = '';
+            allObjects = [];
+            allPrefixes = [];
 
             // Update UI
             document.getElementById('current-bucket').textContent = bucket || 'Select a bucket';
             document.getElementById('upload-btn').style.display = bucket ? 'flex' : 'none';
             document.getElementById('upload-zone').style.display = bucket ? 'block' : 'none';
+            document.getElementById('search-container').style.display = bucket ? 'block' : 'none';
+
+            // Clear search
+            document.getElementById('object-search').value = '';
 
             // Update breadcrumb
             const breadcrumb = document.getElementById('breadcrumb');
@@ -732,6 +787,10 @@
                 const prefixes = data.CommonPrefixes || [];
                 const objects = data.Contents || [];
 
+                // Store for filtering
+                allPrefixes = prefixes;
+                allObjects = objects;
+
                 if (prefixes.length === 0 && objects.length === 0) {
                     emptyState.innerHTML = `
                         <i data-lucide="folder-open" class="empty-state-icon"></i>
@@ -745,67 +804,8 @@
                 emptyState.style.display = 'none';
                 objectsTable.style.display = 'table';
 
-                let html = '';
-
-                // Folders
-                prefixes.forEach(p => {
-                    const folderName = p.Prefix.split('/').slice(-2)[0];
-                    html += `
-                        <tr class="object-row" onclick="navigateToFolder('${p.Prefix}')">
-                            <td>
-                                <div class="flex items-center gap-3">
-                                    <i data-lucide="folder" class="w-5 h-5 text-blue-400"></i>
-                                    <span class="font-medium text-white">${folderName}/</span>
-                                </div>
-                            </td>
-                            <td class="text-zinc-500">-</td>
-                            <td class="text-zinc-500">-</td>
-                            <td><span class="badge badge-blue">Folder</span></td>
-                            <td class="text-right"></td>
-                        </tr>
-                    `;
-                });
-
-                // Objects
-                objects.forEach(obj => {
-                    const key = obj.Key;
-                    const name = key.split('/').pop();
-                    const size = formatBytes(obj.Size);
-                    const modified = obj.LastModified ? new Date(obj.LastModified).toLocaleDateString() : '-';
-
-                    html += `
-                        <tr class="object-row">
-                            <td>
-                                <div class="flex items-center gap-3">
-                                    <i data-lucide="file" class="w-5 h-5 text-zinc-500"></i>
-                                    <span class="font-medium text-white">${name}</span>
-                                </div>
-                            </td>
-                            <td class="text-zinc-400 font-mono text-sm">${size}</td>
-                            <td class="text-zinc-500">${modified}</td>
-                            <td><span class="badge badge-green">STANDARD</span></td>
-                            <td class="text-right">
-                                <div class="flex items-center justify-end gap-1">
-                                    <button onclick="event.stopPropagation(); downloadObject('${bucket}', '${key}')"
-                                            class="p-1.5 rounded hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors" title="Download">
-                                        <i data-lucide="download" class="w-4 h-4"></i>
-                                    </button>
-                                    <button onclick="event.stopPropagation(); copyUrl('${bucket}', '${key}')"
-                                            class="p-1.5 rounded hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors" title="Copy URL">
-                                        <i data-lucide="link" class="w-4 h-4"></i>
-                                    </button>
-                                    <button onclick="event.stopPropagation(); deleteObject('${key}')"
-                                            class="p-1.5 rounded hover:bg-zinc-800 text-zinc-400 hover:text-red-400 transition-colors" title="Delete">
-                                        <i data-lucide="trash-2" class="w-4 h-4"></i>
-                                    </button>
-                                </div>
-                            </td>
-                        </tr>
-                    `;
-                });
-
-                document.getElementById('objects-body').innerHTML = html;
-                lucide.createIcons();
+                // Use the shared render function
+                renderObjects(prefixes, objects);
             } catch (error) {
                 emptyState.innerHTML = `
                     <i data-lucide="alert-circle" class="empty-state-icon text-red-400"></i>
@@ -847,6 +847,114 @@
             return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
         }
 
+        // Filter objects by search query
+        function filterObjects(query) {
+            const emptyState = document.getElementById('empty-state');
+            const objectsTable = document.getElementById('objects-table');
+
+            if (!query) {
+                // Show all objects
+                renderObjects(allPrefixes, allObjects);
+                return;
+            }
+
+            const lowerQuery = query.toLowerCase();
+
+            // Filter prefixes
+            const filteredPrefixes = allPrefixes.filter(p =>
+                p.Prefix.toLowerCase().includes(lowerQuery)
+            );
+
+            // Filter objects
+            const filteredObjects = allObjects.filter(obj =>
+                obj.Key.toLowerCase().includes(lowerQuery)
+            );
+
+            if (filteredPrefixes.length === 0 && filteredObjects.length === 0) {
+                emptyState.innerHTML = `
+                    <i data-lucide="search-x" class="empty-state-icon"></i>
+                    <h3 class="text-lg font-medium text-white mb-1">No results</h3>
+                    <p class="text-zinc-500">No objects match "${query}"</p>
+                `;
+                lucide.createIcons();
+                emptyState.style.display = 'flex';
+                objectsTable.style.display = 'none';
+            } else {
+                emptyState.style.display = 'none';
+                objectsTable.style.display = 'table';
+                renderObjects(filteredPrefixes, filteredObjects);
+            }
+        }
+
+        // Render objects (refactored for reuse)
+        function renderObjects(prefixes, objects) {
+            let html = '';
+
+            // Folders
+            prefixes.forEach(p => {
+                const folderName = p.Prefix.split('/').slice(-2)[0];
+                html += `
+                    <tr class="object-row" onclick="navigateToFolder('${p.Prefix}')">
+                        <td>
+                            <div class="flex items-center gap-3">
+                                <i data-lucide="folder" class="w-5 h-5 text-blue-400"></i>
+                                <span class="font-medium text-white">${folderName}/</span>
+                            </div>
+                        </td>
+                        <td class="text-zinc-500">-</td>
+                        <td class="text-zinc-500">-</td>
+                        <td><span class="badge badge-blue">Folder</span></td>
+                        <td class="text-right"></td>
+                    </tr>
+                `;
+            });
+
+            // Objects
+            objects.forEach(obj => {
+                const key = obj.Key;
+                const name = key.split('/').pop();
+                const size = formatBytes(obj.Size);
+                const modified = obj.LastModified ? new Date(obj.LastModified).toLocaleDateString() : '-';
+
+                html += `
+                    <tr class="object-row">
+                        <td>
+                            <div class="flex items-center gap-3">
+                                <i data-lucide="file" class="w-5 h-5 text-zinc-500"></i>
+                                <span class="font-medium text-white">${name}</span>
+                            </div>
+                        </td>
+                        <td class="text-zinc-400 font-mono text-sm">${size}</td>
+                        <td class="text-zinc-500">${modified}</td>
+                        <td><span class="badge badge-green">STANDARD</span></td>
+                        <td class="text-right">
+                                <div class="flex items-center justify-end gap-1">
+                                    <button onclick="event.stopPropagation(); previewObject('${currentBucket}', '${key}')"
+                                            class="p-1.5 rounded hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors" title="Preview">
+                                        <i data-lucide="eye" class="w-4 h-4"></i>
+                                    </button>
+                                    <button onclick="event.stopPropagation(); downloadObject('${currentBucket}', '${key}')"
+                                            class="p-1.5 rounded hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors" title="Download">
+                                        <i data-lucide="download" class="w-4 h-4"></i>
+                                    </button>
+                                    <button onclick="event.stopPropagation(); copyUrl('${currentBucket}', '${key}')"
+                                            class="p-1.5 rounded hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors" title="Copy URL">
+                                        <i data-lucide="link" class="w-4 h-4"></i>
+                                    </button>
+                                    <button onclick="event.stopPropagation(); deleteObject('${key}')"
+                                            class="p-1.5 rounded hover:bg-zinc-800 text-zinc-400 hover:text-red-400 transition-colors" title="Delete">
+                                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                    </button>
+                                </div>
+                            </td>
+                    </tr>
+                `;
+            });
+
+            document.getElementById('objects-body').innerHTML = html;
+            lucide.createIcons();
+        }
+
         function downloadObject(bucket, key) {
             window.open(`/s3/${bucket}/${key}`, '_blank');
         }
@@ -855,6 +963,95 @@
             const url = `${window.location.origin}/s3/${bucket}/${key}`;
             navigator.clipboard.writeText(url);
             showToast('URL copied to clipboard', 'success');
+        }
+
+        // Preview functions
+        let currentPreviewKey = null;
+
+        async function previewObject(bucket, key) {
+            currentPreviewKey = key;
+            const modal = document.getElementById('preview-modal');
+            const title = document.getElementById('preview-title');
+            const content = document.getElementById('preview-content');
+            const info = document.getElementById('preview-info');
+
+            title.textContent = key.split('/').pop();
+            content.innerHTML = `
+                <div class="flex items-center justify-center h-48 text-zinc-500">
+                    <div class="text-center">
+                        <div class="spinner mx-auto mb-2"></div>
+                        <p>Loading preview...</p>
+                    </div>
+                </div>
+            `;
+            info.textContent = '';
+            modal.style.display = 'flex';
+            lucide.createIcons();
+
+            try {
+                const response = await fetch(`/_mgmt/buckets/${bucket}/objects/${encodeURIComponent(key)}`);
+                if (!response.ok) throw new Error('Failed to load object');
+
+                const blob = await response.blob();
+                const contentType = blob.type;
+                const size = formatBytes(blob.size);
+
+                info.textContent = `${contentType || 'Unknown type'} - ${size}`;
+
+                // Check if it's an image
+                if (contentType.startsWith('image/')) {
+                    const url = URL.createObjectURL(blob);
+                    content.innerHTML = `<img src="${url}" class="max-w-full max-h-80 mx-auto rounded" alt="${key}">`;
+                }
+                // Check if it's text
+                else if (contentType.startsWith('text/') || contentType === 'application/json' || contentType === 'application/javascript') {
+                    const text = await blob.text();
+                    const truncated = text.length > 50000 ? text.substring(0, 50000) + '...' : text;
+                    content.innerHTML = `<pre class="text-sm text-zinc-300 whitespace-pre-wrap font-mono">${escapeHtml(truncated)}</pre>`;
+                }
+                // PDF
+                else if (contentType === 'application/pdf') {
+                    const url = URL.createObjectURL(blob);
+                    content.innerHTML = `<iframe src="${url}" class="w-full h-80 rounded" ></iframe>`;
+                }
+                // Other files
+                else {
+                    content.innerHTML = `
+                        <div class="flex flex-col items-center justify-center h-48 text-zinc-500">
+                            <i data-lucide="file-text" class="w-16 h-16 mb-4"></i>
+                            <p class="text-lg font-medium">${contentType || 'Unknown file type'}</p>
+                            <p class="text-sm mt-2">Preview not available for this file type</p>
+                        </div>
+                    `;
+                    lucide.createIcons();
+                }
+            } catch (error) {
+                content.innerHTML = `
+                    <div class="flex flex-col items-center justify-center h-48 text-red-400">
+                        <i data-lucide="alert-circle" class="w-12 h-12 mb-2"></i>
+                        <p>Error loading preview</p>
+                        <p class="text-sm text-zinc-500 mt-1">${error.message}</p>
+                    </div>
+                `;
+                lucide.createIcons();
+            }
+        }
+
+        function closePreviewModal() {
+            document.getElementById('preview-modal').style.display = 'none';
+            currentPreviewKey = null;
+        }
+
+        function downloadCurrentPreview() {
+            if (currentPreviewKey && currentBucket) {
+                downloadObject(currentBucket, currentPreviewKey);
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
         }
 
         // Modal functions
@@ -1044,6 +1241,7 @@
                 closeCreateBucketModal();
                 closeDeleteModal();
                 closeUploadModal();
+                closePreviewModal();
             }
             if (e.key === 'r' && e.ctrlKey) {
                 e.preventDefault();

@@ -77,8 +77,8 @@ func (t *Tagging) ToXML() string {
 
 	for _, tag := range t.TagSet {
 		xml += `<Tag>`
-		xml += fmt.Sprintf(`<Key>%s</Key>`, escapeXML(tag.Key))
-		xml += fmt.Sprintf(`<Value>%s</Value>`, escapeXML(tag.Value))
+		xml += fmt.Sprintf(`<Key>%s</Key>`, EscapeXML(tag.Key))
+		xml += fmt.Sprintf(`<Value>%s</Value>`, EscapeXML(tag.Value))
 		xml += `</Tag>`
 	}
 
@@ -167,20 +167,22 @@ func contains(s, substr string) bool {
 	return false
 }
 
-// escapeXML escapes special XML characters
-func escapeXML(s string) string {
-	s = replaceAll(s, "&", "&amp;")
-	s = replaceAll(s, "<", "&lt;")
-	s = replaceAll(s, ">", "&gt;")
-	s = replaceAll(s, "\"", "&quot;")
-	s = replaceAll(s, "'", "&apos;")
+// EscapeXML escapes special XML characters
+func EscapeXML(s string) string {
+	s = ReplaceAll(s, "&", "&amp;")
+	s = ReplaceAll(s, "<", "&lt;")
+	s = ReplaceAll(s, ">", "&gt;")
+	s = ReplaceAll(s, "\"", "&quot;")
+	s = ReplaceAll(s, "'", "&apos;")
 	return s
 }
 
-func replaceAll(s, old, new string) string {
+// ReplaceAll replaces all occurrences
+func ReplaceAll(s, old, new string) string {
 	result := s
 	for {
-		if idx := findIndex(result, old); idx == -1 {
+		idx := findIndex(result, old)
+		if idx == -1 {
 			break
 		}
 		result = result[:idx] + new + result[idx+len(old):]

@@ -194,8 +194,8 @@ func (r *ReadyChecker) Check(ctx context.Context) error {
 
 // HTTPHandler returns an HTTP handler for readiness checks
 func (r *ReadyChecker) HTTPHandler() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
+	return func(w http.ResponseWriter, req *http.Request) {
+		ctx := req.Context()
 
 		if err := r.Check(ctx); err != nil {
 			w.Header().Set("Content-Type", "application/json")

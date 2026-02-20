@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -63,17 +64,27 @@ func NewWithAWS(cfg Config) (*s3.Client, error) {
 	}
 
 	awsCfg := aws.Config{
-		Region:      aws.String(cfg.Region),
-		Endpoint:    aws.String(cfg.Endpoint),
-		Credentials: credentials.NewStaticCredentials(cfg.AccessKey, cfg.SecretKey, ""),
-		DisableSSL:  aws.Bool(cfg.DisableSSL),
+		Region:      cfg.Region,
+		Credentials: credentials.NewStaticCredentialsProvider(cfg.AccessKey, cfg.SecretKey, ""),
 	}
 
+	opts := []func(*s3.Options){}
 	if cfg.ForcePathStyle {
-		awsCfg.UsePathStyle = aws.Bool(true)
+		opts = append(opts, func(o *s3.Options) {
+			o.UsePathStyle = true
+		})
 	}
 
-	return s3.NewFromConfig(awsCfg), nil
+	// Set custom endpoint
+	resolver := aws.EndpointResolverWithOptionsFunc(func(service, region string, options ...interface{}) (aws.Endpoint, error) {
+		return aws.Endpoint{
+			URL:               cfg.Endpoint,
+			HostnameImmutable: true,
+		}, nil
+	})
+	awsCfg.EndpointResolverWithOptions = resolver
+
+	return s3.NewFromConfig(awsCfg, opts...), nil
 }
 
 // ListBuckets lists all buckets
@@ -315,7 +326,7 @@ func (c *Client) newRequest(ctx context.Context, method, path string, body io.Re
 
 // UploadFile uploads a file
 func (c *Client) UploadFile(ctx context.Context, bucket, key, filename string) error {
-	data, err := io.ReadFile(filename)
+	data, err := os.ReadFile(filename)
 	if err != nil {
 		return err
 	}

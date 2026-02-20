@@ -2,7 +2,6 @@ package federation
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -209,8 +208,8 @@ func (r *AsyncReplicator) processQueue(targetRegion string) {
 	op.Status = OpStatusInProgress
 
 	// Check if target region is active
-	targetRegion, _ := r.federator.GetRegion(targetRegion)
-	if targetRegion == nil || targetRegion.Status != "active" {
+	region, _ := r.federator.GetRegion(targetRegion)
+	if region == nil || region.Status != "active" {
 		// Re-queue for later
 		op.Status = OpStatusPending
 		queue.PendingOps = append(queue.PendingOps, op)
@@ -256,10 +255,13 @@ func (r *AsyncReplicator) executeOp(op *ReplicationOp) error {
 		zap.String("operation", string(op.Operation)))
 
 	// Get target region endpoint
-	targetRegion, ok := r.federator.GetRegion(op.TargetRegion)
+	region, ok := r.federator.GetRegion(op.TargetRegion)
 	if !ok {
 		return fmt.Errorf("target region not found: %s", op.TargetRegion)
 	}
+
+	// Use region endpoint for replication
+	_ = region.Endpoint
 
 	// Simulate replication
 	time.Sleep(100 * time.Millisecond)

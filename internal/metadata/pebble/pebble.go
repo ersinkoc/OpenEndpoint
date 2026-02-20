@@ -1136,7 +1136,7 @@ func (p *PebbleStore) GetPresignedURL(ctx context.Context, url string) (*metadat
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	data, err := p.db.Get(presignedURLKey(url))
+	data, _, err := p.db.Get(presignedURLKey(url))
 	if err == pebble.ErrNotFound {
 		return nil, nil
 	}
@@ -1442,10 +1442,13 @@ func (p *PebbleStore) ListBucketMetrics(ctx context.Context, bucket string) ([]m
 	prefix := []byte("metrics:" + bucket + ":")
 	var configs []metadata.MetricsConfiguration
 
-	iter := p.db.NewIter(nil, nil)
+	iter, err := p.db.NewIter(nil)
+	if err != nil {
+		return nil, err
+	}
 	defer iter.Close()
 
-	for iter.Seek(prefix); iter.Valid(); iter.Next() {
+	for iter.SeekGE(prefix); iter.Valid(); iter.Next() {
 		key := iter.Key()
 		if !bytes.HasPrefix(key, prefix) {
 			break

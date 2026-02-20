@@ -2,7 +2,6 @@ package tiering
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 

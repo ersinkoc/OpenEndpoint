@@ -23,9 +23,6 @@ type ErrorDocument struct {
 	Key string `xml:"Key"`
 }
 
-// RoutingRule defines routing rules
-type RoutingRule []RoutingRule
-
 // RoutingRule represents a single routing rule
 type RoutingRule struct {
 	Condition *Condition `xml:"Condition"`

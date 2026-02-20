@@ -16,6 +16,7 @@ import (
 	"github.com/openendpoint/openendpoint/internal/engine"
 	"github.com/openendpoint/openendpoint/internal/metadata"
 	s3select "github.com/openendpoint/openendpoint/internal/select"
+	"github.com/openendpoint/openendpoint/internal/tags"
 	s3types "github.com/openendpoint/openendpoint/pkg/s3types"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -477,7 +478,7 @@ func (r *Router) handleListObjectVersions(w http.ResponseWriter, req *http.Reque
 	delimiter := req.URL.Query().Get("delimiter")
 	maxKeys := parseInt(req.URL.Query().Get("max-keys"), 1000)
 
-	objects, err := r.engine.ListObjects(ctx, bucket, prefix, metadata.ListOptions{
+	objects, err := r.engine.ListObjects(ctx, bucket, engine.ListObjectsOptions{
 		Prefix:    prefix,
 		Delimiter: delimiter,
 		MaxKeys:   maxKeys,
@@ -494,7 +495,7 @@ func (r *Router) handleListObjectVersions(w http.ResponseWriter, req *http.Reque
 	w.WriteHeader(http.StatusOK)
 
 	var xmlResult string
-	if len(objects) == 0 {
+	if len(objects.Objects) == 0 {
 		xmlResult = fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <ListVersionsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
   <Name>%s</Name>
@@ -506,7 +507,7 @@ func (r *Router) handleListObjectVersions(w http.ResponseWriter, req *http.Reque
 </ListVersionsResult>`, bucket, prefix, maxKeys)
 	} else {
 		var contents string
-		for _, obj := range objects {
+		for _, obj := range objects.Objects {
 			contents += fmt.Sprintf(`<Version>
     <Key>%s</Key>
     <VersionId>%s</VersionId>
@@ -515,7 +516,7 @@ func (r *Router) handleListObjectVersions(w http.ResponseWriter, req *http.Reque
     <ETag>%s</ETag>
     <Size>%d</Size>
   </Version>`,
-				escapeXML(obj.Key),
+				tags.EscapeXML(obj.Key),
 				obj.VersionID,
 				obj.IsLatest,
 				time.Unix(obj.LastModified, 0).Format(time.RFC3339),
@@ -2538,7 +2539,7 @@ func (r *Router) handleGetObjectTags(w http.ResponseWriter, req *http.Request, b
     <Tag>
       <Key>%s</Key>
       <Value>%s</Value>
-    </Tag>`, escapeXML(k), escapeXML(v))
+    </Tag>`, tags.EscapeXML(k), tags.EscapeXML(v))
 		}
 	}
 
@@ -2555,7 +2556,7 @@ func (r *Router) handlePutObjectTags(w http.ResponseWriter, req *http.Request, b
 	ctx := req.Context()
 
 	// Check if object exists
-	obj, err := r.engine.GetObject(ctx, bucket, key, engine.GetObjectOptions{})
+	_, err := r.engine.GetObject(ctx, bucket, key, engine.GetObjectOptions{})
 	if err != nil {
 		r.logger.Warnw("object not found for tags", "bucket", bucket, "key", key, "error", err)
 		r.writeError(w, ErrNoSuchKey)
