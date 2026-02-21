@@ -6,66 +6,153 @@ on:
   pull_request:
     branches: [ main ]
 
+env:
+  GO_VERSION: '1.22'
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
 jobs:
-  test:
-    name: Test
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.22'
-
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Download dependencies
-        run: go mod download
-
-      - name: Run tests
-        run: go test -v -race -coverprofile=coverage.out ./...
-
-      - name: Upload coverage
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage
-          path: coverage.out
-
+  # ============================================
+  # Code Quality
+  # ============================================
   lint:
     name: Lint
     runs-on: ubuntu-latest
-
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
-
-      - name: Checkout code
-        uses: actions/checkout@v4
+          go-version: ${{ env.GO_VERSION }}
 
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
           version: latest
+          args: --timeout=5m
 
-  build:
-    name: Build
+  # ============================================
+  # Security Scanning
+  # ============================================
+  security:
+    name: Security Scan
     runs-on: ubuntu-latest
-    needs: [test, lint]
-
     steps:
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.22'
-
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Build
-        run: go build -ldflags "-s -w" -o bin/openep ./cmd/openep
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Run Govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+      - name: Run Gosec
+        uses: securego/gosec@master
+        with:
+          args: -exclude-generated ./...
+
+  # ============================================
+  # Testing
+  # ============================================
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    needs: [lint, security]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run tests
+        run: go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+
+      - name: Generate coverage report
+        run: |
+          COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
+          echo "TOTAL_COVERAGE=$COVERAGE" >> $GITHUB_ENV
+          echo "### Test Coverage: ${COVERAGE}%" >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.out
+          flags: unittests
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.out
+
+  # ============================================
+  # Benchmark Tests
+  # ============================================
+  benchmark:
+    name: Benchmark
+    runs-on: ubuntu-latest
+    needs: [test]
+    if: github.event_name == 'push'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Run benchmarks
+        run: go test -bench=. -benchmem -benchtime=1s ./... > benchmark.txt
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: benchmark.txt
+
+  # ============================================
+  # Build
+  # ============================================
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Get version
+        id: version
+        run: |
+          VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "v0.1.0")
+          BUILD_TIME=$(date -u '+%Y-%m-%d_%H:%M:%S')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "build_time=$BUILD_TIME" >> $GITHUB_OUTPUT
+
+      - name: Build binary
+        run: |
+          CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=${{ steps.version.outputs.version }} -X main.buildTime=${{ steps.version.outputs.build_time }}" -o bin/openep ./cmd/openep
 
       - name: Upload binary
         uses: actions/upload-artifact@v4
@@ -73,23 +160,45 @@ jobs:
           name: openep-linux-amd64
           path: bin/openep
 
+  # ============================================
+  # Docker Build (only on main branch)
+  # ============================================
   docker:
-    name: Docker
+    name: Docker Build
     runs-on: ubuntu-latest
     needs: [build]
-
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Download binary
-        uses: actions/download-artifact@v4
-        with:
-          name: openep-linux-amd64
-          path: .
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
 
       - name: Build and push
         uses: docker/build-push-action@v5
@@ -97,7 +206,8 @@ jobs:
           context: .
           file: ./deploy/docker/Dockerfile
           platforms: linux/amd64,linux/arm64
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: openendpoint/openendpoint:latest
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

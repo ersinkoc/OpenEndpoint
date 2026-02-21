@@ -2119,7 +2119,7 @@ Object Detail Panel (click on object):
 
 ```bash
 # Installation
-curl -fsSL https://get.openendpoint.io | sh
+curl -fsSL https://get.openendpoint.com | sh
 # or
 go install github.com/OpenEndpoint/openendpoint/cmd/openep@latest
 
@@ -2501,7 +2501,7 @@ services:
       - node3-data:/var/lib/openendpoint
 
 # 4. Kubernetes (Helm)
-helm repo add openendpoint https://charts.openendpoint.io
+helm repo add openendpoint https://charts.openendpoint.com
 helm install my-storage openendpoint/openendpoint \
   --set cluster.nodes=5 \
   --set storage.size=100Gi \

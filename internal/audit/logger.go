@@ -302,7 +302,9 @@ func (l *Logger) cleanupBackups() {
 	// Remove oldest files
 	toRemove := len(matches) - l.config.MaxBackups
 	for i := 0; i < toRemove; i++ {
-		os.Remove(matches[i])
+		if err := os.Remove(matches[i]); err != nil {
+			l.logger.Warn("failed to remove old audit log", "file", matches[i], "error", err)
+		}
 	}
 }
 
@@ -311,8 +313,12 @@ func sortByModTime(files []string) {
 	// Simple bubble sort for small number of files
 	for i := 0; i < len(files); i++ {
 		for j := i + 1; j < len(files); j++ {
-			ti, _ := os.Stat(files[i])
-			tj, _ := os.Stat(files[j])
+			ti, erri := os.Stat(files[i])
+			tj, errj := os.Stat(files[j])
+			// Skip if either file can't be stat'ed
+			if erri != nil || errj != nil {
+				continue
+			}
 			if ti.ModTime().After(tj.ModTime()) {
 				files[i], files[j] = files[j], files[i]
 			}

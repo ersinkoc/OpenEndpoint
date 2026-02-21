@@ -87,6 +87,7 @@ type BucketLimiter struct {
 	mu            sync.RWMutex
 	cleanupPeriod time.Duration
 	maxAge        time.Duration
+	stopCh        chan struct{}
 }
 
 // limiterEntry wraps a limiter with last access time
@@ -103,24 +104,36 @@ func NewBucketLimiter(maxTokens, refillRate float64) *BucketLimiter {
 		defaultLimit:  NewLimiter(maxTokens, refillRate),
 		cleanupPeriod: 5 * time.Minute,
 		maxAge:        30 * time.Minute,
+		stopCh:        make(chan struct{}),
 	}
 	// Start cleanup goroutine
 	go bl.cleanup()
 	return bl
 }
 
+// Stop stops the cleanup goroutine
+func (bl *BucketLimiter) Stop() {
+	close(bl.stopCh)
+}
+
 // cleanup periodically removes stale limiters
 func (bl *BucketLimiter) cleanup() {
 	ticker := time.NewTicker(bl.cleanupPeriod)
-	for range ticker.C {
-		bl.mu.Lock()
-		now := time.Now()
-		for ip, entry := range bl.ipLimits {
-			if now.Sub(entry.lastAccess) > bl.maxAge {
-				delete(bl.ipLimits, ip)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-bl.stopCh:
+			return
+		case <-ticker.C:
+			bl.mu.Lock()
+			now := time.Now()
+			for ip, entry := range bl.ipLimits {
+				if now.Sub(entry.lastAccess) > bl.maxAge {
+					delete(bl.ipLimits, ip)
+				}
 			}
+			bl.mu.Unlock()
 		}
-		bl.mu.Unlock()
 	}
 }
 

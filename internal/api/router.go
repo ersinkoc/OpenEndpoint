@@ -63,6 +63,15 @@ func isBodyTooLarge(data []byte) bool {
 	return len(data) > maxRequestBodySize
 }
 
+// sanitizeHeaderValue removes potentially dangerous characters from header values
+// to prevent HTTP header injection attacks
+func sanitizeHeaderValue(value string) string {
+	// Remove newlines and carriage returns that could enable header injection
+	result := strings.ReplaceAll(value, "\r", "")
+	result = strings.ReplaceAll(result, "\n", "")
+	return result
+}
+
 // ServeHTTP handles S3 API requests
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	// Check for presigned URL query parameters
@@ -566,10 +575,10 @@ func (r *Router) handleGetObject(w http.ResponseWriter, req *http.Request, bucke
 	}
 	defer obj.Body.Close()
 
-	// Set headers
-	w.Header().Set("Content-Type", obj.ContentType)
+	// Set headers (sanitize user-controlled values to prevent header injection)
+	w.Header().Set("Content-Type", sanitizeHeaderValue(obj.ContentType))
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", obj.Size))
-	w.Header().Set("ETag", obj.ETag)
+	w.Header().Set("ETag", sanitizeHeaderValue(obj.ETag))
 
 	// Use a buffer to ensure data is properly sent
 	data, err := io.ReadAll(obj.Body)
@@ -596,9 +605,9 @@ func (r *Router) handleHeadObject(w http.ResponseWriter, req *http.Request, buck
 		return
 	}
 
-	w.Header().Set("Content-Type", meta.ContentType)
+	w.Header().Set("Content-Type", sanitizeHeaderValue(meta.ContentType))
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", meta.Size))
-	w.Header().Set("ETag", meta.ETag)
+	w.Header().Set("ETag", sanitizeHeaderValue(meta.ETag))
 	w.WriteHeader(http.StatusOK)
 
 	s3RequestsTotal.WithLabelValues("HeadObject", "200").Inc()
@@ -645,7 +654,7 @@ func (r *Router) handlePutObject(w http.ResponseWriter, req *http.Request, bucke
 	}
 
 	// Set response headers
-	w.Header().Set("ETag", result.ETag)
+	w.Header().Set("ETag", sanitizeHeaderValue(result.ETag))
 	w.WriteHeader(http.StatusOK)
 
 	s3RequestsTotal.WithLabelValues("PutObject", "200").Inc()
@@ -859,7 +868,7 @@ func (r *Router) handleUploadPart(w http.ResponseWriter, req *http.Request, buck
 		return
 	}
 
-	w.Header().Set("ETag", result.ETag)
+	w.Header().Set("ETag", sanitizeHeaderValue(result.ETag))
 	w.WriteHeader(http.StatusOK)
 
 	s3RequestsTotal.WithLabelValues("UploadPart", "200").Inc()
@@ -903,7 +912,7 @@ func (r *Router) handleCompleteMultipartUpload(w http.ResponseWriter, req *http.
 	}
 
 	w.Header().Set("Content-Type", "application/xml")
-	w.Header().Set("ETag", result.ETag)
+	w.Header().Set("ETag", sanitizeHeaderValue(result.ETag))
 	w.WriteHeader(http.StatusOK)
 
 	resp := s3types.CompleteMultipartUploadResult{
