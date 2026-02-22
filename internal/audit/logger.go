@@ -303,7 +303,7 @@ func (l *Logger) cleanupBackups() {
 	toRemove := len(matches) - l.config.MaxBackups
 	for i := 0; i < toRemove; i++ {
 		if err := os.Remove(matches[i]); err != nil {
-			l.logger.Warn("failed to remove old audit log", "file", matches[i], "error", err)
+			l.logger.Warn("failed to remove old audit log", zap.String("file", matches[i]), zap.Error(err))
 		}
 	}
 }

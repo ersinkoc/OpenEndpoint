@@ -15,7 +15,7 @@ import (
 	"github.com/openendpoint/openendpoint/internal/config"
 	"github.com/openendpoint/openendpoint/internal/engine"
 	"github.com/openendpoint/openendpoint/internal/metadata"
-	s3select "github.com/openendpoint/openendpoint/internal/select"
+	s3select "github.com/openendpoint/openendpoint/internal/s3select"
 	"github.com/openendpoint/openendpoint/internal/tags"
 	s3types "github.com/openendpoint/openendpoint/pkg/s3types"
 	"github.com/prometheus/client_golang/prometheus"
