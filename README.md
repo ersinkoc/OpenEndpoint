@@ -87,6 +87,45 @@ OpenEndpoint is a fully S3-compatible object storage platform designed for devel
 
 ## 🏃 Quick Start
 
+### 🚀 One-Click Setup (Recommended)
+
+#### Linux/macOS
+```bash
+curl -fsSL https://raw.githubusercontent.com/openendpoint/openendpoint/main/setup.sh | bash
+```
+
+#### Windows (PowerShell - Admin)
+```powershell
+irm https://raw.githubusercontent.com/openendpoint/openendpoint/main/setup.ps1 | iex
+```
+
+#### Windows (Batch - Admin)
+```batch
+powershell -Command "irm https://raw.githubusercontent.com/openendpoint/openendpoint/main/setup.ps1 | iex"
+```
+
+Or download and run locally:
+```bash
+# Linux/macOS
+git clone https://github.com/openendpoint/openendpoint.git
+cd openendpoint
+chmod +x setup.sh
+./setup.sh
+
+# Windows (PowerShell Admin)
+git clone https://github.com/openendpoint/openendpoint.git
+cd openendpoint
+.\setup.ps1
+```
+
+The setup script will:
+- Detect your operating system and architecture
+- Install Docker (if not present) or binary
+- Generate secure random credentials
+- Create configuration files
+- Start the service
+- Display access information
+
 ### Option 1: Docker (Recommended)
 
 ```bash
@@ -138,7 +177,7 @@ git clone https://github.com/openendpoint/openendpoint.git
 cd openendpoint
 
 # Build
-make build
+go build -o bin/openep.exe ./cmd/openep
 
 # Run
 ./bin/openep server --config config.example.yaml
@@ -414,8 +453,11 @@ We will respond within 48 hours.
 |----------|-------------|
 | [CHANGELOG.md](CHANGELOG.md) | Release history and changes |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | How to contribute |
-| [ROADMAP.md](files/ROADMAP.md) | Development plans |
-| [Vision Document](docs/openendpoint-complete-vision.md) | Complete technical vision |
+| [docs/TESTING.md](docs/TESTING.md) | Testing guide |
+| [docs/ERROR_CODES.md](docs/ERROR_CODES.md) | Error codes reference |
+| [docs/QUICKREF.md](docs/QUICKREF.md) | Quick reference |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | Development plans |
+| [docs/openendpoint-complete-vision.md](docs/openendpoint-complete-vision.md) | Complete technical vision |
 
 ---
 
@@ -450,16 +492,18 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guid
 # Clone and setup
 git clone https://github.com/openendpoint/openendpoint.git
 cd openendpoint
-make deps
+
+# Install dependencies
+go mod download
 
 # Run tests
-make test
+go test ./...
 
 # Build
-make build
+go build -o bin/openep.exe ./cmd/openep
 
 # Run locally
-make run-dev
+./bin/openep server --config config.example.yaml
 ```
 
 ---
