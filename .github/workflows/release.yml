@@ -23,11 +23,6 @@ jobs:
         run: |
           VERSION=${GITHUB_REF#refs/tags/}
 
-          # Debug: Check directory structure
-          pwd
-          ls -la
-          ls -la cmd/ || true
-
           # Build from root directory using relative path
           # Linux AMD64
           GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=$VERSION" -o openep-linux-amd64 ./cmd/openep
@@ -59,13 +54,15 @@ jobs:
       - name: Docker Build
         run: |
           VERSION=${GITHUB_REF#refs/tags/}
-          docker build -t ghcr.io/${{ github.repository }}:$VERSION -t ghcr.io/${{ github.repository }}:latest -f deploy/docker/Dockerfile .
-          docker push ghcr.io/${{ github.repository }}:$VERSION
-          docker push ghcr.io/${{ github.repository }}:latest
+          REPO=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          docker build -t ghcr.io/$REPO:$VERSION -t ghcr.io/$REPO:latest -f deploy/docker/Dockerfile .
+          docker push ghcr.io/$REPO:$VERSION
+          docker push ghcr.io/$REPO:latest
 
       - name: Release
         uses: softprops/action-gh-release@v1
         with:
           generate_release_notes: true
-          files: '*.tar.gz
-*.zip'
+          files: |
+            *.tar.gz
+            *.zip
