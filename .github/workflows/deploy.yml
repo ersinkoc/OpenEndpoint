@@ -1,0 +1,398 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      version:
+        description: 'Version to deploy (e.g., v1.0.0)'
+        required: true
+        type: string
+      confirm:
+        description: 'Confirm deployment to production'
+        required: false
+        type: boolean
+        default: false
+
+  workflow_run:
+    workflows: ['Release']
+    types:
+      - completed
+    branches:
+      - 'v*'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  # ============================================
+  # Validate Deployment
+  # ============================================
+  validate:
+    name: Validate Deployment
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      environment: ${{ steps.env.outputs.environment }}
+      image_tag: ${{ steps.image.outputs.tag }}
+    steps:
+      - name: Determine version and environment
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+            ENV="${{ github.event.inputs.environment }}"
+
+            # Require confirmation for production
+            if [ "$ENV" == "production" ] && [ "${{ github.event.inputs.confirm }}" != "true" ]; then
+              echo "❌ Production deployment requires confirmation"
+              exit 1
+            fi
+          else
+            # Triggered by release workflow
+            VERSION="${{ github.event.workflow_run.head_branch }}"
+            ENV="staging"
+          fi
+
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "environment=$ENV" >> $GITHUB_ENV
+          echo "Deploying version $VERSION to $ENV"
+
+      - name: Check image exists
+        id: image
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:$VERSION"
+
+          echo "Checking if image exists: $IMAGE"
+
+          # Try to pull the image
+          if docker pull "$IMAGE" 2>/dev/null; then
+            echo "✅ Image found: $IMAGE"
+            echo "tag=$IMAGE" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Image not found: $IMAGE"
+            exit 1
+          fi
+
+      - name: Output environment
+        id: env
+        run: |
+          echo "environment=${{ env.environment }}" >> $GITHUB_OUTPUT
+
+  # ============================================
+  # Deploy to Staging
+  # ============================================
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [validate]
+    if: needs.validate.outputs.environment == 'staging'
+    environment:
+      name: staging
+      url: https://staging.openendpoint.io
+    steps:
+      - name: Checkout deployment configs
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            deploy/k8s
+            deploy/docker
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: 'v1.29.0'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig --name ${{ secrets.EKS_CLUSTER_NAME }} --region ${{ secrets.AWS_REGION }}
+
+      - name: Deploy to EKS
+        run: |
+          VERSION="${{ needs.validate.outputs.version }}"
+          IMAGE="${{ needs.validate.outputs.image_tag }}"
+
+          # Update image tag in deployment
+          sed -i "s|image:.*|image: $IMAGE|" deploy/k8s/staging/deployment.yaml
+          sed -i "s|version:.*|version: $VERSION|" deploy/k8s/staging/deployment.yaml
+
+          # Apply manifests
+          kubectl apply -k deploy/k8s/staging/
+
+          # Wait for rollout
+          kubectl rollout status deployment/openendpoint -n staging --timeout=300s
+
+      - name: Verify deployment
+        run: |
+          kubectl get pods -n staging
+          kubectl get svc -n staging
+
+      - name: Run smoke tests
+        run: |
+          # Wait for service to be ready
+          sleep 30
+
+          # Health check
+          ENDPOINT="https://staging.openendpoint.io/health"
+          for i in {1..10}; do
+            if curl -sf "$ENDPOINT"; then
+              echo "✅ Health check passed"
+              exit 0
+            fi
+            echo "Attempt $i failed, retrying..."
+            sleep 10
+          done
+
+          echo "❌ Health check failed"
+          exit 1
+
+      - name: Notify
+        if: always()
+        run: |
+          echo "## 🚀 Staging Deployment" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Detail | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Version | ${{ needs.validate.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Image | ${{ needs.validate.outputs.image_tag }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Status | ${{ job.status }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| URL | https://staging.openendpoint.io |" >> $GITHUB_STEP_SUMMARY
+
+  # ============================================
+  # Deploy to Production
+  # ============================================
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [validate]
+    if: needs.validate.outputs.environment == 'production'
+    environment:
+      name: production
+      url: https://api.openendpoint.io
+    steps:
+      - name: Checkout deployment configs
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            deploy/k8s
+            deploy/docker
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: 'v1.29.0'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig --name ${{ secrets.EKS_CLUSTER_NAME }} --region ${{ secrets.AWS_REGION }}
+
+      - name: Pre-deployment backup
+        run: |
+          echo "Creating pre-deployment backup..."
+          # Backup database if applicable
+          # kubectl exec ...
+
+      - name: Deploy to EKS (Canary)
+        run: |
+          VERSION="${{ needs.validate.outputs.version }}"
+          IMAGE="${{ needs.validate.outputs.image_tag }}"
+
+          # Update image tag
+          sed -i "s|image:.*|image: $IMAGE|" deploy/k8s/production/deployment.yaml
+          sed -i "s|version:.*|version: $VERSION|" deploy/k8s/production/deployment.yaml
+
+          # Canary deployment - 10% traffic
+          kubectl apply -k deploy/k8s/production/
+          kubectl set image deployment/openendpoint openendpoint=$IMAGE -n production
+          kubectl scale deployment/openendpoint --replicas=1 -n production
+
+          # Wait for canary
+          kubectl rollout status deployment/openendpoint -n production --timeout=300s
+
+      - name: Canary verification
+        run: |
+          sleep 60
+
+          # Run canary tests
+          ENDPOINT="https://api.openendpoint.io/health"
+          for i in {1..5}; do
+            if curl -sf "$ENDPOINT"; then
+              echo "✅ Canary health check passed"
+              break
+            fi
+            echo "Attempt $i failed, retrying..."
+            sleep 10
+          done
+
+          # Check error rates (would integrate with monitoring)
+          echo "Checking error rates..."
+
+      - name: Full rollout
+        run: |
+          # Scale to full replicas
+          kubectl scale deployment/openendpoint --replicas=3 -n production
+          kubectl rollout status deployment/openendpoint -n production --timeout=600s
+
+      - name: Post-deployment verification
+        run: |
+          kubectl get pods -n production
+          kubectl get svc -n production
+
+          # Comprehensive health checks
+          ENDPOINT="https://api.openendpoint.io"
+
+          # Health endpoint
+          curl -sf "$ENDPOINT/health" || exit 1
+
+          # Metrics endpoint
+          curl -sf "$ENDPOINT/metrics" || exit 1
+
+          echo "✅ All health checks passed"
+
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          echo "❌ Deployment failed, rolling back..."
+          kubectl rollout undo deployment/openendpoint -n production
+          kubectl rollout status deployment/openendpoint -n production --timeout=300s
+          echo "✅ Rollback completed"
+
+      - name: Notify
+        if: always()
+        run: |
+          echo "## 🚀 Production Deployment" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Detail | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Version | ${{ needs.validate.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Image | ${{ needs.validate.outputs.image_tag }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Status | ${{ job.status }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| URL | https://api.openendpoint.io |" >> $GITHUB_STEP_SUMMARY
+
+      - name: Discord Notification
+        if: always() && secrets.DISCORD_WEBHOOK_URL != ''
+        uses: Ilshidur/action-discord@master
+        with:
+          args: |
+            ${{ job.status == 'success' && '🚀 Production deployment successful!' || '❌ Production deployment failed!' }}
+
+            Version: ${{ needs.validate.outputs.version }}
+            Status: ${{ job.status }}
+            URL: https://api.openendpoint.io
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+
+  # ============================================
+  # Docker Compose Deployment
+  # ============================================
+  deploy-compose:
+    name: Deploy via Docker Compose
+    runs-on: ubuntu-latest
+    needs: [validate]
+    if: github.event.inputs.environment == 'staging' || github.event_name == 'workflow_run'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Deploy to server
+        run: |
+          VERSION="${{ needs.validate.outputs.version }}"
+          SERVER="${{ secrets.DEPLOY_SERVER }}"
+
+          # Copy compose file
+          scp -o StrictHostKeyChecking=no deploy/docker/docker-compose.yml $SERVER:/opt/openendpoint/
+
+          # Deploy
+          ssh -o StrictHostKeyChecking=no $SERVER << EOF
+            cd /opt/openendpoint
+            export VERSION=$VERSION
+            docker-compose pull
+            docker-compose up -d
+            docker-compose ps
+          EOF
+
+  # ============================================
+  # Update Documentation
+  # ============================================
+  update-docs:
+    name: Update Documentation
+    runs-on: ubuntu-latest
+    needs: [deploy-production]
+    if: needs.validate.outputs.environment == 'production'
+    steps:
+      - name: Checkout docs repository
+        uses: actions/checkout@v4
+        with:
+          repository: openendpoint/docs
+          token: ${{ secrets.DOCS_REPO_TOKEN }}
+
+      - name: Update version in docs
+        run: |
+          VERSION="${{ needs.validate.outputs.version }}"
+
+          # Update version references
+          sed -i "s/latest_version:.*/latest_version: $VERSION/" _data/versions.yml
+
+          git add _data/versions.yml
+          git commit -m "docs: update latest version to $VERSION" || echo "No changes"
+          git push || echo "Nothing to push"
+
+  # ============================================
+  # Cleanup
+  # ============================================
+  cleanup:
+    name: Cleanup Old Images
+    runs-on: ubuntu-latest
+    needs: [deploy-production]
+    if: needs.validate.outputs.environment == 'production'
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Cleanup ECR
+        run: |
+          # Keep only last 10 images
+          aws ecr describe-images \
+            --repository-name openendpoint \
+            --query 'sort_by(imageDetails,& imagePushedAt)[*].imageDigest' \
+            --output text | tr '\t' '\n' | tail -n +11 | while read digest; do
+              echo "Deleting image: $digest"
+              aws ecr batch-delete-image \
+                --repository-name openendpoint \
+                --image-ids imageDigest=$digest || true
+          done

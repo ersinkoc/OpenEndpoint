@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or Discussion
+    url: https://github.com/openendpoint/openendpoint/discussions
+    about: Please ask and answer questions here
+  - name: Security Vulnerability
+    url: https://github.com/openendpoint/openendpoint/security/policy
+    about: Please report security vulnerabilities here
+  - name: Documentation Issue
+    url: https://github.com/openendpoint/openendpoint/issues/new?labels=documentation&template=documentation.md
+    about: Report issues with documentation

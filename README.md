@@ -4,13 +4,15 @@
 
 ### Developer-First S3-Compatible Object Storage
 
+[![CI](https://github.com/openendpoint/openendpoint/workflows/CI/badge.svg)](https://github.com/openendpoint/openendpoint/actions/workflows/ci.yml)
+[![Release](https://github.com/openendpoint/openendpoint/workflows/Release/badge.svg)](https://github.com/openendpoint/openendpoint/actions/workflows/release.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/openendpoint/openendpoint)](https://goreportcard.com/report/github.com/openendpoint/openendpoint)
 [![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat&logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Coverage](https://img.shields.io/badge/Coverage-90%25-brightgreen)]()
 [![Tests](https://img.shields.io/badge/Tests-100%25_success-brightgreen)]()
 [![Security](https://img.shields.io/badge/Security-Hardened-green)]()
-[![Release](https://img.shields.io/badge/Release-v1.0.0-blue)]()
+[![Release](https://img.shields.io/github/v/release/openendpoint/openendpoint)](https://github.com/openendpoint/openendpoint/releases)
 
 *A production-ready, self-hosted alternative to Amazon S3*
 
@@ -357,6 +359,41 @@ go test -bench=. ./...
 | **Management API** | ~84% |
 
 **Note:** Some functions like `main()`, `runServer()`, and `runMonitorWatch()` cannot be unit tested as they start actual servers or run infinite loops. These are tested through integration tests.
+
+---
+
+## 🔄 CI/CD
+
+OpenEndpoint uses comprehensive GitHub Actions workflows for continuous integration and deployment.
+
+### Workflows
+
+| Workflow | Trigger | Purpose |
+|----------|---------|---------|
+| **CI** | Push, PR | Lint, test, build, security scan |
+| **Release** | Tag push | Multi-platform binaries, Docker images, signed releases |
+| **Deploy** | Manual, Release | Staging/production deployment with canary |
+| **Changelog** | PR merge | Auto-update CHANGELOG.md |
+| **Dependencies** | Weekly | Automated dependency updates |
+| **Code Quality** | Daily | Coverage, static analysis, benchmarks |
+
+### Creating a Release
+
+```bash
+# Automatic release on tag push
+git tag v1.0.0
+git push origin v1.0.0
+
+# Or manual via GitHub Actions
+# Actions → Release → Run workflow
+```
+
+### Deployment Environments
+
+- **Staging**: Auto-deploys on release completion
+- **Production**: Manual trigger with confirmation
+
+See [.github/workflows/README.md](.github/workflows/README.md) for detailed configuration.
 
 ---
 

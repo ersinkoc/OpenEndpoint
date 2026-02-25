@@ -181,4 +181,19 @@ docker pull ghcr.io/openendpoint/openendpoint:1.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+
+### Changed
+
+### Fixed
+
+### Security
+
+---
+
 *OpenEndpoint — Your endpoints. Your data. Your rules.*
+
+[Unreleased]: https://github.com/openendpoint/openendpoint/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/openendpoint/openendpoint/releases/tag/v1.0.0

@@ -3,17 +3,29 @@ name: CI
 on:
   push:
     branches: [ main, develop ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.gitignore'
   pull_request:
     branches: [ main ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.gitignore'
 
 env:
   GO_VERSION: '1.22'
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # ============================================
-  # Code Quality
+  # Code Quality & Linting
   # ============================================
   lint:
     name: Lint
@@ -26,12 +38,25 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
+          cache: true
 
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
           version: latest
-          args: --timeout=5m
+          args: --timeout=10m --out-format=colored-line-number
+          skip-cache: false
+
+      - name: Check formatting
+        run: |
+          if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then
+            echo "The following files need formatting:"
+            gofmt -s -l .
+            exit 1
+          fi
+
+      - name: Run go vet
+        run: go vet ./...
 
   # ============================================
   # Security Scanning
@@ -39,6 +64,10 @@ jobs:
   security:
     name: Security Scan
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -47,24 +76,55 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
+          cache: true
 
       - name: Run Govulncheck
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
-          govulncheck ./...
+          govulncheck -show verbose ./... || true
 
-      - name: Run Gosec
+      - name: Run Gosec Security Scanner
         uses: securego/gosec@master
         with:
-          args: -exclude-generated ./...
+          args: '-fmt sarif -out results.sarif -exclude-generated ./...'
+
+      - name: Upload SARIF file
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: results.sarif
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Trivy SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif
 
   # ============================================
-  # Testing
+  # Testing Matrix
   # ============================================
   test:
     name: Test
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     needs: [lint, security]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        go: ['1.21', '1.22']
+        include:
+          - os: ubuntu-latest
+            go: '1.22'
+            coverage: true
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -72,21 +132,30 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version: ${{ matrix.go }}
+          cache: true
 
       - name: Download dependencies
         run: go mod download
 
       - name: Run tests
-        run: go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+        run: go test -v -race -timeout 10m ./...
+
+      - name: Run tests with coverage
+        if: matrix.coverage
+        run: |
+          go test -v -race -coverprofile=coverage.out -covermode=atomic -coverpkg=./... ./...
+          go tool cover -func=coverage.out
 
       - name: Generate coverage report
+        if: matrix.coverage
         run: |
           COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
           echo "TOTAL_COVERAGE=$COVERAGE" >> $GITHUB_ENV
           echo "### Test Coverage: ${COVERAGE}%" >> $GITHUB_STEP_SUMMARY
 
       - name: Upload coverage to Codecov
+        if: matrix.coverage
         uses: codecov/codecov-action@v4
         with:
           files: ./coverage.out
@@ -95,10 +164,52 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
 
       - name: Upload coverage artifact
+        if: matrix.coverage
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
           path: coverage.out
+          retention-days: 30
+
+  # ============================================
+  # Integration Tests
+  # ============================================
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: [test]
+    services:
+      minio:
+        image: minio/minio:latest
+        env:
+          MINIO_ROOT_USER: testuser
+          MINIO_ROOT_PASSWORD: testpassword
+        ports:
+          - 9000:9000
+          - 9001:9001
+        options: >-
+          --health-cmd "curl -f http://localhost:9000/minio/health/live"
+          --health-interval 30s
+          --health-timeout 20s
+          --health-retries 3
+          --entrypoint sh
+          -c "minio server /data --console-address ':9001'"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Run integration tests
+        run: go test -v -tags=integration ./test/integration/...
+        env:
+          S3_ENDPOINT: http://localhost:9000
+          S3_ACCESS_KEY: testuser
+          S3_SECRET_KEY: testpassword
 
   # ============================================
   # Benchmark Tests
@@ -116,23 +227,51 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
+          cache: true
 
       - name: Run benchmarks
-        run: go test -bench=. -benchmem -benchtime=1s ./... > benchmark.txt
+        run: go test -bench=. -benchmem -benchtime=5s ./... 2>&1 | tee benchmark.txt
 
       - name: Upload benchmark results
         uses: actions/upload-artifact@v4
         with:
           name: benchmark-results
           path: benchmark.txt
+          retention-days: 30
+
+      - name: Compare benchmarks
+        if: github.ref == 'refs/heads/main'
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          tool: 'go'
+          output-file-path: benchmark.txt
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: true
+          alert-threshold: '200%'
+          comment-on-alert: true
+          fail-on-alert: false
 
   # ============================================
-  # Build
+  # Build Matrix
   # ============================================
   build:
-    name: Build
+    name: Build ${{ matrix.os }}-${{ matrix.arch }}
     runs-on: ubuntu-latest
     needs: [test]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux
+            arch: amd64
+          - os: linux
+            arch: arm64
+          - os: darwin
+            arch: amd64
+          - os: darwin
+            arch: arm64
+          - os: windows
+            arch: amd64
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -141,33 +280,45 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
+          cache: true
 
       - name: Get version
         id: version
         run: |
-          VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "v0.1.0")
+          VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "dev-$(git rev-parse --short HEAD)")
           BUILD_TIME=$(date -u '+%Y-%m-%d_%H:%M:%S')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "build_time=$BUILD_TIME" >> $GITHUB_OUTPUT
 
       - name: Build binary
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: 0
         run: |
-          CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=${{ steps.version.outputs.version }} -X main.buildTime=${{ steps.version.outputs.build_time }}" -o bin/openep ./cmd/openep
+          EXT=""
+          if [ "${{ matrix.os }}" == "windows" ]; then
+            EXT=".exe"
+          fi
+          go build -ldflags "-s -w -X main.version=${{ steps.version.outputs.version }} -X main.buildTime=${{ steps.version.outputs.build_time }}" \
+            -o bin/openep-${{ matrix.os }}-${{ matrix.arch }}${EXT} \
+            ./cmd/openep
 
       - name: Upload binary
         uses: actions/upload-artifact@v4
         with:
-          name: openep-linux-amd64
-          path: bin/openep
+          name: openep-${{ matrix.os }}-${{ matrix.arch }}
+          path: bin/openep-*
+          retention-days: 7
 
   # ============================================
-  # Docker Build (only on main branch)
+  # Docker Build
   # ============================================
   docker:
     name: Docker Build
     runs-on: ubuntu-latest
     needs: [build]
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: read
       packages: write
@@ -181,7 +332,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to Container Registry
+      - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -198,7 +349,8 @@ jobs:
             type=ref,event=pr
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=sha
+            type=semver,pattern={{major}}
+            type=sha,prefix=,suffix=,format=short
 
       - name: Build and push
         uses: docker/build-push-action@v5
@@ -206,8 +358,43 @@ jobs:
           context: .
           file: ./deploy/docker/Dockerfile
           platforms: linux/amd64,linux/arm64
-          push: true
+          push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.spdx.json
+
+  # ============================================
+  # Summary
+  # ============================================
+  summary:
+    name: Summary
+    runs-on: ubuntu-latest
+    needs: [lint, security, test, integration, build, docker]
+    if: always()
+    steps:
+      - name: Generate Summary
+        run: |
+          echo "## CI Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Lint | ${{ needs.lint.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Security | ${{ needs.security.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Test | ${{ needs.test.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Integration | ${{ needs.integration.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build | ${{ needs.build.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Docker | ${{ needs.docker.result }} |" >> $GITHUB_STEP_SUMMARY

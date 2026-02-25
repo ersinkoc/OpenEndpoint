@@ -1,0 +1,41 @@
+# GitHub Sponsors and funding configuration
+# Learn more: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/displaying-a-sponsor-button-in-your-repository
+
+# GitHub Sponsors (enable at https://github.com/sponsors)
+# github:
+#   - ersinkoc
+
+# Open Collective
+# open_collective: openendpoint
+
+# Patreon
+# patreon: openendpoint
+
+# Ko-fi
+# ko_fi: openendpoint
+
+# Tidelift
+# tidelift: go/github.com/openendpoint/openendpoint
+
+# Community Bridge
+# community_bridge: openendpoint
+
+# Liberapay
+# liberapay: openendpoint
+
+# IssueHunt
+# issuehunt: openendpoint
+
+# Otechie
+# otechie: openendpoint
+
+# LFX Crowdfunding
+# lfx_crowdfunding: openendpoint
+
+# Polar
+# polar: openendpoint
+
+# Custom funding URLs
+custom:
+  - https://openendpoint.com/donate
+  - https://github.com/sponsors/openendpoint

@@ -1,0 +1,27 @@
+OpenEndpoint
+Copyright 2026 OpenEndpoint Contributors
+
+This product includes software developed at OpenEndpoint (https://openendpoint.com/).
+
+This product uses the following third-party libraries:
+
+- AWS SDK for Go v2 - Apache License 2.0
+- Pebble - BSD 3-Clause License
+- BBolt - MIT License
+- Memberlist - Mozilla Public License 2.0
+- Reed-Solomon - MIT License
+- Prometheus Client - Apache License 2.0
+- Zap - MIT License
+- Viper - MIT License
+- Cobra - Apache License 2.0
+- Testify - MIT License
+
+For the complete list of dependencies and their licenses, see:
+https://github.com/openendpoint/openendpoint/blob/main/go.mod
+
+---
+
+OpenEndpoint is licensed under the Apache License, Version 2.0.
+See LICENSE file for full license text.
+
+This software is provided "as is", without warranty of any kind.
