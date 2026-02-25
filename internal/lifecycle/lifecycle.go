@@ -17,24 +17,24 @@ type Lifecycle struct {
 
 // Rule represents a lifecycle rule
 type Rule struct {
-	ID         string         `json:"id" yaml:"id"`
-	Name       string         `json:"name" yaml:"name"`
-	Enabled    bool           `json:"enabled" yaml:"enabled"`
-	Priority   int            `json:"priority" yaml:"priority"`
-	Filter     *Filter        `json:"filter" yaml:"filter"`
-	Actions    []*Action      `json:"actions" yaml:"actions"`
-	CreatedAt  time.Time      `json:"createdAt" yaml:"createdAt"`
-	ModifiedAt time.Time      `json:"modifiedAt" yaml:"modifiedAt"`
-	Status     string         `json:"status" yaml:"status"` // Enabled, Disabled
+	ID         string    `json:"id" yaml:"id"`
+	Name       string    `json:"name" yaml:"name"`
+	Enabled    bool      `json:"enabled" yaml:"enabled"`
+	Priority   int       `json:"priority" yaml:"priority"`
+	Filter     *Filter   `json:"filter" yaml:"filter"`
+	Actions    []*Action `json:"actions" yaml:"actions"`
+	CreatedAt  time.Time `json:"createdAt" yaml:"createdAt"`
+	ModifiedAt time.Time `json:"modifiedAt" yaml:"modifiedAt"`
+	Status     string    `json:"status" yaml:"status"` // Enabled, Disabled
 }
 
 // Filter represents the filter for a rule
 type Filter struct {
-	Prefix            string            `json:"prefix,omitempty" yaml:"prefix,omitempty"`
-	Tag              *Tag              `json:"tag,omitempty" yaml:"tag,omitempty"`
-	And              *AndFilter        `json:"and,omitempty" yaml:"and,omitempty"`
-	ObjectSizeGreater *int64            `json:"objectSizeGreaterThan,omitempty" yaml:"objectSizeGreaterThan,omitempty"`
-	ObjectSizeLesser  *int64            `json:"objectSizeLessThan,omitempty" yaml:"objectSizeLessThan,omitempty"`
+	Prefix            string     `json:"prefix,omitempty" yaml:"prefix,omitempty"`
+	Tag               *Tag       `json:"tag,omitempty" yaml:"tag,omitempty"`
+	And               *AndFilter `json:"and,omitempty" yaml:"and,omitempty"`
+	ObjectSizeGreater *int64     `json:"objectSizeGreaterThan,omitempty" yaml:"objectSizeGreaterThan,omitempty"`
+	ObjectSizeLesser  *int64     `json:"objectSizeLessThan,omitempty" yaml:"objectSizeLessThan,omitempty"`
 }
 
 // Tag represents a tag filter
@@ -51,34 +51,34 @@ type AndFilter struct {
 
 // Action represents a lifecycle action
 type Action struct {
-	Name          string `json:"name" yaml:"name"` // Delete, Transition, ExpiredObjectDeleteMarker, AbortIncompleteMultipartUpload
-	Days          *int   `json:"days,omitempty" yaml:"days,omitempty"`
-	Date          *string `json:"date,omitempty" yaml:"date,omitempty"`
-	StorageClass  *string `json:"storageClass,omitempty" yaml:"storageClass,omitempty"`
-	DeleteMarkerReplication *bool `json:"deleteMarkerReplication,omitempty" yaml:"deleteMarkerReplication,omitempty"`
+	Name                    string  `json:"name" yaml:"name"` // Delete, Transition, ExpiredObjectDeleteMarker, AbortIncompleteMultipartUpload
+	Days                    *int    `json:"days,omitempty" yaml:"days,omitempty"`
+	Date                    *string `json:"date,omitempty" yaml:"date,omitempty"`
+	StorageClass            *string `json:"storageClass,omitempty" yaml:"storageClass,omitempty"`
+	DeleteMarkerReplication *bool   `json:"deleteMarkerReplication,omitempty" yaml:"deleteMarkerReplication,omitempty"`
 }
 
 // StorageClassTransition represents storage class transitions
 var StorageClasses = map[string]string{
-	"STANDARD":          "STANDARD",
-	"STANDARD_IA":       "STANDARD_IA",
+	"STANDARD":            "STANDARD",
+	"STANDARD_IA":         "STANDARD_IA",
 	"INTELLIGENT_TIERING": "INTELLIGENT_TIERING",
-	"GLACIER":           "GLACIER",
-	"DEEP_ARCHIVE":      "DEEP_ARCHIVE",
-	"REDUCED_REDUNDANCY": "REDUCED_REDUNDANCY",
+	"GLACIER":             "GLACIER",
+	"DEEP_ARCHIVE":        "DEEP_ARCHIVE",
+	"REDUCED_REDUNDANCY":  "REDUCED_REDUNDANCY",
 }
 
 // Transition represents a transition action
 type Transition struct {
-	Days          int    `json:"days" yaml:"days"`
+	Days         int    `json:"days" yaml:"days"`
 	StorageClass string `json:"storageClass" yaml:"storageClass"`
 }
 
 // Expiration represents an expiration action
 type Expiration struct {
-	Days            int    `json:"days" yaml:"days"`
-	Date            string `json:"date" yaml:"date"`
-	ExpiredObjectDeleteMarker bool `json:"expiredObjectDeleteMarker" yaml:"expiredObjectDeleteMarker"`
+	Days                      int    `json:"days" yaml:"days"`
+	Date                      string `json:"date" yaml:"date"`
+	ExpiredObjectDeleteMarker bool   `json:"expiredObjectDeleteMarker" yaml:"expiredObjectDeleteMarker"`
 }
 
 // AbortIncompleteMultipartUpload represents abort incomplete multipart upload
@@ -328,10 +328,10 @@ func (l *Lifecycle) GetExpiredObjects(bucket string, now time.Time) []ObjectExpi
 				if action.Days != nil {
 					expiryDate := now.AddDate(0, 0, -*action.Days)
 					expired = append(expired, ObjectExpiry{
-						RuleID:      rule.ID,
-						ObjectKey:   rule.Filter.Prefix,
-						ExpiryDate:  expiryDate,
-						ActionType:  "Expiration",
+						RuleID:     rule.ID,
+						ObjectKey:  rule.Filter.Prefix,
+						ExpiryDate: expiryDate,
+						ActionType: "Expiration",
 					})
 				}
 			}
@@ -362,12 +362,16 @@ func (l *Lifecycle) GetTransitions(bucket string, now time.Time) []ObjectTransit
 			if action.Name == "Transition" || action.Name == "StorageClass" {
 				if action.Days != nil && action.StorageClass != nil {
 					transitionDate := now.AddDate(0, 0, -*action.Days)
+					prefix := ""
+					if rule.Filter != nil {
+						prefix = rule.Filter.Prefix
+					}
 					transitions = append(transitions, ObjectTransition{
-						RuleID:       rule.ID,
-						ObjectKey:    rule.Filter.Prefix,
+						RuleID:         rule.ID,
+						ObjectKey:      prefix,
 						TransitionDate: transitionDate,
-						StorageClass: *action.StorageClass,
-						ActionType:   "Transition",
+						StorageClass:   *action.StorageClass,
+						ActionType:     "Transition",
 					})
 				}
 			}
@@ -387,18 +391,18 @@ type ObjectExpiry struct {
 
 // ObjectTransition represents an object that should be transitioned
 type ObjectTransition struct {
-	RuleID          string
-	ObjectKey       string
-	TransitionDate  time.Time
-	StorageClass    string
-	ActionType      string
+	RuleID         string
+	ObjectKey      string
+	TransitionDate time.Time
+	StorageClass   string
+	ActionType     string
 }
 
-// generateRuleID generates a unique rule ID
+var randRead = rand.Read
+
 func generateRuleID() string {
 	b := make([]byte, 4)
-	if _, err := rand.Read(b); err != nil {
-		// Fallback to timestamp if crypto/rand fails
+	if _, err := randRead(b); err != nil {
 		return fmt.Sprintf("rule-%d", time.Now().UnixNano())
 	}
 	return fmt.Sprintf("rule-%s", hex.EncodeToString(b))

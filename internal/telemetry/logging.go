@@ -78,6 +78,10 @@ func NewLogger(level string) (*zap.SugaredLogger, error) {
 		},
 	}
 
+	return buildLogger(config)
+}
+
+func buildLogger(config zap.Config) (*zap.SugaredLogger, error) {
 	logger, err := config.Build()
 	if err != nil {
 		return nil, err

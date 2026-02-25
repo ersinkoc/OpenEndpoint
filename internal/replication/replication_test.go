@@ -1,6 +1,7 @@
 package replication
 
 import (
+	"errors"
 	"testing"
 	"time"
 )
@@ -256,8 +257,8 @@ func TestUpdateStats(t *testing.T) {
 	rep.AddRule("test-bucket", &Rule{ID: "rule-1"})
 
 	update := &Stats{
-		ReplicatedObjects: 10,
-		ReplicatedBytes:   1024,
+		ReplicatedObjects:  10,
+		ReplicatedBytes:    1024,
 		PendingReplication: 5,
 	}
 
@@ -486,6 +487,20 @@ func TestGenerateRuleID(t *testing.T) {
 	}
 }
 
+func TestGenerateRuleID_RandError(t *testing.T) {
+	origRandRead := randRead
+	defer func() { randRead = origRandRead }()
+
+	randRead = func(b []byte) (n int, err error) {
+		return 0, errors.New("mock rand error")
+	}
+
+	id := generateRuleID()
+	if id == "" {
+		t.Error("Rule ID should not be empty even on error")
+	}
+}
+
 func TestToJSON(t *testing.T) {
 	rep := New()
 
@@ -534,7 +549,7 @@ func TestConcurrentAccess(t *testing.T) {
 			bucket := string(rune('A' + id))
 			rep.AddRule(bucket, &Rule{ID: string(rune('0' + id))})
 			rep.ListRules(bucket)
-			rep.GetRule(bucket, string(rune('0' + id)))
+			rep.GetRule(bucket, string(rune('0'+id)))
 			done <- true
 		}(i)
 	}
@@ -618,5 +633,117 @@ func TestRuleTimestamps(t *testing.T) {
 
 	if found.ModifiedAt.Before(before) || found.ModifiedAt.After(after) {
 		t.Error("ModifiedAt should be set to current time")
+	}
+}
+
+func TestFromJSON_InvalidJSON(t *testing.T) {
+	rep := New()
+
+	invalidJSON := []byte(`{invalid json}`)
+
+	err := rep.FromJSON("test-bucket", invalidJSON)
+	if err == nil {
+		t.Error("Should return error for invalid JSON")
+	}
+}
+
+func TestFromJSON_EmptyArray(t *testing.T) {
+	rep := New()
+
+	err := rep.FromJSON("test-bucket", []byte(`[]`))
+	if err != nil {
+		t.Fatalf("FromJSON failed: %v", err)
+	}
+
+	rules := rep.ListRules("test-bucket")
+	if len(rules) != 0 {
+		t.Errorf("Rules count = %d, want 0", len(rules))
+	}
+
+	_, ok := rep.GetStats("test-bucket")
+	if ok {
+		t.Error("Stats should not be set for empty rules")
+	}
+}
+
+func TestGetEnabledRules_NonExistentBucket(t *testing.T) {
+	rep := New()
+
+	enabled := rep.GetEnabledRules("non-existent")
+	if len(enabled) != 0 {
+		t.Errorf("Enabled rules = %d, want 0", len(enabled))
+	}
+}
+
+func TestUpdateRule_WithFilterAndDestination(t *testing.T) {
+	rep := New()
+
+	rule := &Rule{
+		ID:       "rule-123",
+		Name:     "Original",
+		Priority: 1,
+		Status:   "Enabled",
+	}
+	rep.AddRule("test-bucket", rule)
+
+	updates := &Rule{
+		Filter: &Filter{
+			Prefix: "photos/",
+			Tag: &Tag{
+				Key:   "type",
+				Value: "image",
+			},
+		},
+		Destination: &Destination{
+			Bucket:       "dest-bucket",
+			StorageClass: "STANDARD",
+		},
+	}
+
+	updated, err := rep.UpdateRule("test-bucket", "rule-123", updates)
+	if err != nil {
+		t.Fatalf("UpdateRule failed: %v", err)
+	}
+
+	if updated.Filter == nil {
+		t.Error("Filter should be updated")
+	}
+	if updated.Filter.Prefix != "photos/" {
+		t.Errorf("Filter prefix = %s, want photos/", updated.Filter.Prefix)
+	}
+	if updated.Destination == nil {
+		t.Error("Destination should be updated")
+	}
+	if updated.Destination.Bucket != "dest-bucket" {
+		t.Errorf("Destination bucket = %s, want dest-bucket", updated.Destination.Bucket)
+	}
+}
+
+func TestUpdateRule_EmptyFieldsNotUpdated(t *testing.T) {
+	rep := New()
+
+	rule := &Rule{
+		ID:       "rule-123",
+		Name:     "Original",
+		Priority: 5,
+		Status:   "Enabled",
+	}
+	rep.AddRule("test-bucket", rule)
+
+	updates := &Rule{}
+
+	updated, err := rep.UpdateRule("test-bucket", "rule-123", updates)
+	if err != nil {
+		t.Fatalf("UpdateRule failed: %v", err)
+	}
+
+	if updated.Name != "Original" {
+		t.Errorf("Name = %s, want Original", updated.Name)
+	}
+	if updated.Priority != 5 {
+		t.Errorf("Priority = %d, want 5", updated.Priority)
+	}
+	if updated.Status != "Enabled" {
+		t.Errorf("Status = %s, want Enabled", updated.Status)
 	}
 }

@@ -13,21 +13,21 @@ type IAMPolicy struct {
 	Description string         `json:"Description"`
 	Version     string         `json:"Version"`
 	Statements  []IAMStatement `json:"Statement"`
-	CreatedAt   time.Time     `json:"CreatedAt"`
-	UpdatedAt   time.Time     `json:"UpdatedAt"`
+	CreatedAt   time.Time      `json:"CreatedAt"`
+	UpdatedAt   time.Time      `json:"UpdatedAt"`
 }
 
 // IAMStatement represents a policy statement
 type IAMStatement struct {
-	Sid          string          `json:"Sid,omitempty"`
-	Effect       string          `json:"Effect"` // Allow or Deny
-	Principal    *IAMPrincipal   `json:"Principal,omitempty"`
-	NotPrincipal *IAMPrincipal   `json:"NotPrincipal,omitempty"`
-	Actions      []string        `json:"Action"`
-	NotActions   []string        `json:"NotAction,omitempty"`
-	Resources    []string        `json:"Resource"`
-	NotResources []string        `json:"NotResource,omitempty"`
-	Condition    *IAMCondition  `json:"Condition,omitempty"`
+	Sid          string        `json:"Sid,omitempty"`
+	Effect       string        `json:"Effect"` // Allow or Deny
+	Principal    *IAMPrincipal `json:"Principal,omitempty"`
+	NotPrincipal *IAMPrincipal `json:"NotPrincipal,omitempty"`
+	Actions      []string      `json:"Action"`
+	NotActions   []string      `json:"NotAction,omitempty"`
+	Resources    []string      `json:"Resource"`
+	NotResources []string      `json:"NotResource,omitempty"`
+	Condition    *IAMCondition `json:"Condition,omitempty"`
 }
 
 // IAMPrincipal represents who the policy applies to
@@ -42,19 +42,19 @@ type IAMCondition struct {
 	StringLike   map[string]string `json:"StringLike,omitempty"`
 	IpAddress    map[string]string `json:"IpAddress,omitempty"`
 	Numeric      map[string]int    `json:"Numeric,omitempty"`
-	Bool         map[string]bool  `json:"Bool,omitempty"`
-	Null         map[string]bool  `json:"Null,omitempty"`
+	Bool         map[string]bool   `json:"Bool,omitempty"`
+	Null         map[string]bool   `json:"Null,omitempty"`
 }
 
 // IAMUser represents an IAM user
 type IAMUser struct {
-	ID           string    `json:"Id"`
-	AccessKey    string    `json:"AccessKey"`
-	DisplayName  string    `json:"DisplayName"`
-	PolicyArns   []string  `json:"PolicyArns"`
-	Permissions  []string  `json:"Permissions"`
-	CreatedAt    time.Time `json:"CreatedAt"`
-	LastUsed     time.Time `json:"LastUsed"`
+	ID          string    `json:"Id"`
+	AccessKey   string    `json:"AccessKey"`
+	DisplayName string    `json:"DisplayName"`
+	PolicyArns  []string  `json:"PolicyArns"`
+	Permissions []string  `json:"Permissions"`
+	CreatedAt   time.Time `json:"CreatedAt"`
+	LastUsed    time.Time `json:"LastUsed"`
 }
 
 // PolicyEvaluator evaluates policies
@@ -168,25 +168,19 @@ func (e *PolicyEvaluator) matchResources(resources []string, resource string) bo
 				return true
 			}
 		}
-		// Support ARNs
-		if len(resource) > 6 && resource[:6] == "arn:aws" {
-			if r == resource {
-				return true
-			}
-		}
 	}
 	return false
 }
 
 // S3ActionToIAMAction converts S3 action to IAM action
 var S3ActionToIAMAction = map[string]string{
-	"s3:GetObject":           "s3:GetObject",
-	"s3:PutObject":           "s3:PutObject",
-	"s3:DeleteObject":        "s3:DeleteObject",
-	"s3:ListBucket":          "s3:ListBucket",
-	"s3:CreateBucket":       "s3:CreateBucket",
-	"s3:DeleteBucket":        "s3:DeleteBucket",
-	"s3:GetBucketLocation":   "s3:GetBucketLocation",
+	"s3:GetObject":            "s3:GetObject",
+	"s3:PutObject":            "s3:PutObject",
+	"s3:DeleteObject":         "s3:DeleteObject",
+	"s3:ListBucket":           "s3:ListBucket",
+	"s3:CreateBucket":         "s3:CreateBucket",
+	"s3:DeleteBucket":         "s3:DeleteBucket",
+	"s3:GetBucketLocation":    "s3:GetBucketLocation",
 	"s3:ListMultipartUploads": "s3:ListMultipartUploads",
 }
 
@@ -216,16 +210,16 @@ func (p *IAMPolicy) ToJSON() ([]byte, error) {
 
 // BucketPermission represents bucket permissions
 type BucketPermission struct {
-	Bucket    string
-	Prefix    string
-	Grantee   string
+	Bucket     string
+	Prefix     string
+	Grantee    string
 	Permission string
 }
 
 // ACL represents an access control list
 type ACL struct {
-	Owner       Owner
-	Grants     []Grant
+	Owner  Owner
+	Grants []Grant
 }
 
 // Owner represents resource owner

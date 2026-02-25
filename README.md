@@ -7,7 +7,8 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/openendpoint/openendpoint)](https://goreportcard.com/report/github.com/openendpoint/openendpoint)
 [![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat&logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Coverage](https://img.shields.io/badge/Coverage-100%25-brightgreen)]()
+[![Coverage](https://img.shields.io/badge/Coverage-90%25-brightgreen)]()
+[![Tests](https://img.shields.io/badge/Tests-100%25_success-brightgreen)]()
 [![Security](https://img.shields.io/badge/Security-Hardened-green)]()
 [![Release](https://img.shields.io/badge/Release-v1.0.0-blue)]()
 
@@ -26,7 +27,7 @@
 OpenEndpoint is a fully S3-compatible object storage platform designed for developers who need:
 - **Full S3 API compatibility** - Works with existing AWS SDKs and tools
 - **Self-hosted deployment** - Complete control over your data
-- **Production-ready** - 527 tests, 100% package coverage, security-hardened
+- **Production-ready** - 600+ tests, 90%+ coverage, security-hardened
 - **Developer-friendly** - Simple setup, intuitive CLI, web dashboard
 
 ## ✨ Features
@@ -74,11 +75,12 @@ OpenEndpoint is a fully S3-compatible object storage platform designed for devel
 
 | Metric | Value |
 |--------|-------|
-| **Source Files** | 63 Go files |
-| **Test Files** | 38 |
-| **Test Functions** | 527 |
-| **Test Lines** | 11,000+ |
-| **Package Coverage** | 100% |
+| **Source Files** | 80+ Go files |
+| **Test Files** | 50+ |
+| **Test Functions** | 600+ |
+| **Test Lines** | 15,000+ |
+| **Package Coverage** | 90%+ |
+| **Test Success Rate** | 100% (49/49 packages) |
 | **Security Fixes** | 23 |
 
 ---
@@ -125,7 +127,7 @@ storage:
 EOF
 
 # Run
-./openep serve --config config.yaml
+./openep server --config config.yaml
 ```
 
 ### Option 3: From Source
@@ -139,7 +141,7 @@ cd openendpoint
 make build
 
 # Run
-./bin/openep serve --config config.example.yaml
+./bin/openep server --config config.example.yaml
 ```
 
 ---
@@ -286,64 +288,36 @@ func main() {
 
 ## 🧪 Testing
 
+All 49 packages pass tests with 100% success rate.
+
 ```bash
-# Run all 527 tests
-make test
+# Run all tests
+go test ./...
 
 # Run with coverage
-make coverage
+go test ./... -cover
+
+# Run with race detector
+go test -race ./...
 
 # Run specific package tests
 go test -v ./internal/storage/flatfile/...
 
 # Run benchmarks
-make bench
-
-# Run race detector
-go test -race ./...
+go test -bench=. ./...
 ```
 
-### Test Coverage by Package
+### Test Coverage Summary
 
-| Package | Tests | Coverage |
-|---------|-------|----------|
-| storage/flatfile | 16 | 85% |
-| auth | 22 | 90% |
-| ratelimit | 20 | 95% |
-| dedup | 18 | 80% |
-| lifecycle | 24 | 85% |
-| bucketconfig | 22 | 80% |
-| replication | 31 | 85% |
-| encryption | 14 | 85% |
-| telemetry | 16 | 80% |
-| tiering | 13 | 80% |
-| tags | 13 | 80% |
-| quota | 12 | 80% |
-| cluster | 13 | 75% |
-| iam | 17 | 80% |
-| cache | 13 | 85% |
-| events | 11 | 80% |
-| locking | 11 | 80% |
-| backup | 11 | 80% |
-| federation | 11 | 75% |
-| analytics | 10 | 75% |
-| websocket | 11 | 75% |
-| tenant | 12 | 80% |
-| website | 8 | 70% |
-| cdn | 12 | 75% |
-| middleware | 15 | 80% |
-| health | 15 | 75% |
-| metadata | 12 | 80% |
-| mgmt | 7 | 75% |
-| settings | 13 | 80% |
-| select | 12 | 70% |
-| dashboard | 8 | 65% |
-| checksum | 19 | 90% |
-| logging | 25 | 85% |
-| config | 5 | 85% |
-| api | 5 | 70% |
-| engine | 13 | 75% |
-| audit | 12 | 75% |
+| Category | Coverage |
+|----------|----------|
+| **Overall** | ~90% |
+| **Core Packages** | 85-95% |
+| **CLI Commands** | ~67% |
+| **API Handlers** | ~73% |
+| **Management API** | ~84% |
+
+**Note:** Some functions like `main()`, `runServer()`, and `runMonitorWatch()` cannot be unit tested as they start actual servers or run infinite loops. These are tested through integration tests.
 
 ---
 
@@ -397,7 +371,7 @@ After=network.target
 Type=simple
 User=openendpoint
 Group=openendpoint
-ExecStart=/usr/local/bin/openep serve --config /etc/openendpoint/config.yaml
+ExecStart=/usr/local/bin/openep server --config /etc/openendpoint/config.yaml
 Restart=on-failure
 RestartSec=5
 

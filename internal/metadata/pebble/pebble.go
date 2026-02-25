@@ -6,6 +6,7 @@ import (
 	"encoding/gob"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,9 +16,9 @@ import (
 )
 
 type PebbleStore struct {
-	db     *pebble.DB
+	db      *pebble.DB
 	rootDir string
-	mu     sync.RWMutex
+	mu      sync.RWMutex
 }
 
 // New creates a new Pebble metadata store
@@ -27,8 +28,8 @@ func New(rootDir string) (*PebbleStore, error) {
 	opts := &pebble.Options{
 		// Performance settings
 		Cache:           pebble.NewCache(256 << 20), // 256MB cache
-		MaxOpenFiles:   1000,
-		BytesPerSync:   512 << 10,
+		MaxOpenFiles:    1000,
+		BytesPerSync:    512 << 10,
 		WALBytesPerSync: 512 << 10,
 
 		// Memory settings
@@ -127,10 +128,10 @@ func (p *PebbleStore) CreateBucket(ctx context.Context, bucket string) error {
 	defer p.mu.Unlock()
 
 	meta := &metadata.BucketMetadata{
-		Name:          bucket,
-		CreationDate:  nowUnix(),
-		Owner:         "root",
-		Region:        "us-east-1",
+		Name:         bucket,
+		CreationDate: nowUnix(),
+		Owner:        "root",
+		Region:       "us-east-1",
 	}
 
 	data, err := encodeMeta(meta)
@@ -394,7 +395,7 @@ func (p *PebbleStore) ListMultipartUploads(ctx context.Context, bucket, prefix s
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
-	prefixKey := "multipart:" + bucket + "/" + prefix
+	bucketPrefix := "multipart:" + bucket + "/"
 
 	iter, err := p.db.NewIter(nil)
 	if err != nil {
@@ -403,10 +404,17 @@ func (p *PebbleStore) ListMultipartUploads(ctx context.Context, bucket, prefix s
 	defer iter.Close()
 
 	var uploads []metadata.MultipartUploadMetadata
-	for iter.SeekGE([]byte(prefixKey)); iter.Valid(); iter.Next() {
+	for iter.First(); iter.Valid(); iter.Next() {
 		key := string(iter.Key())
-		if len(key) < 11 || key[:11] != "multipart:" {
-			break
+		if !strings.HasPrefix(key, bucketPrefix) {
+			continue
+		}
+
+		if prefix != "" {
+			rest := key[len(bucketPrefix):]
+			if !strings.HasPrefix(rest, prefix) {
+				continue
+			}
 		}
 
 		var meta metadata.MultipartUploadMetadata

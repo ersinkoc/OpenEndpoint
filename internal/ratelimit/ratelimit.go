@@ -178,7 +178,7 @@ func (bl *BucketLimiter) getLimiter(clientIP string) *Limiter {
 	}
 
 	entry = &limiterEntry{
-		limiter:    NewLimiter(100, 50), // 100 requests, 50 per second
+		limiter:    NewLimiter(bl.limiter.maxTokens, bl.limiter.refillRate),
 		lastAccess: time.Now(),
 	}
 	bl.ipLimits[clientIP] = entry

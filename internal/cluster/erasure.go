@@ -12,9 +12,9 @@ import (
 
 // ErasureConfig contains erasure coding configuration
 type ErasureConfig struct {
-	DataShards    int // Number of data shards
-	ParityShards  int // Number of parity shards
-	TotalShards   int // Total shards (data + parity)
+	DataShards   int // Number of data shards
+	ParityShards int // Number of parity shards
+	TotalShards  int // Total shards (data + parity)
 }
 
 // DefaultErasureConfig returns default configuration (4+2)
@@ -31,7 +31,7 @@ func HighPerformanceConfig() ErasureConfig {
 	return ErasureConfig{
 		DataShards:   8,
 		ParityShards: 2,
-		TotalShards: 10,
+		TotalShards:  10,
 	}
 }
 
@@ -46,10 +46,10 @@ func HighDurabilityConfig() ErasureConfig {
 
 // ErasureCoder handles erasure coding operations
 type ErasureCoder struct {
-	config  ErasureConfig
-	enc     reedsolomon.Encoder
-	logger  *zap.Logger
-	pool    *sync.Pool
+	config ErasureConfig
+	enc    reedsolomon.Encoder
+	logger *zap.Logger
+	pool   *sync.Pool
 }
 
 // NewErasureCoder creates a new erasure coder
@@ -98,6 +98,11 @@ func (c *ErasureCoder) Encode(data []byte) ([][]byte, error) {
 	// Use encoder to create parity shards
 	shards := make([][]byte, c.config.TotalShards)
 	copy(shards, dataShards)
+
+	// Initialize parity shards
+	for i := c.config.DataShards; i < c.config.TotalShards; i++ {
+		shards[i] = make([]byte, shardSize)
+	}
 
 	err := c.enc.Encode(shards)
 	if err != nil {
@@ -216,10 +221,10 @@ func (c *ErasureCoder) JoinSize(shardSize int) int {
 
 // ErasureStripe represents a stripe of erasure-coded data
 type ErasureStripe struct {
-	ID        string    `json:"id"`
-	Key       string    `json:"key"`
+	ID        string   `json:"id"`
+	Key       string   `json:"key"`
 	Shards    [][]byte `json:"shards"`
-	CreatedAt int64     `json:"created_at"`
+	CreatedAt int64    `json:"created_at"`
 }
 
 // ErasureStripeStore manages erasure stripes
@@ -294,6 +299,9 @@ type ErasureWriter struct {
 	ring    *HashRing
 	manager *Manager
 	logger  *zap.Logger
+
+	testEncodeErr bool
+	testWriteErr  bool
 }
 
 // NewErasureWriter creates a new erasure writer
@@ -308,19 +316,20 @@ func NewErasureWriter(coder *ErasureCoder, ring *HashRing, manager *Manager, log
 
 // Write writes erasure-coded data to nodes
 func (w *ErasureWriter) Write(ctx context.Context, key string, data []byte) error {
-	// Encode data into shards
+	if w.testEncodeErr {
+		return fmt.Errorf("test encode error")
+	}
+
 	shards, err := w.coder.Encode(data)
 	if err != nil {
 		return fmt.Errorf("failed to encode: %w", err)
 	}
 
-	// Get target nodes
 	targetNodes := w.ring.GetNNodes(key, w.coder.GetConfig().TotalShards)
 	if len(targetNodes) < w.coder.GetConfig().TotalShards {
 		return fmt.Errorf("not enough nodes: have %d, need %d", len(targetNodes), w.coder.GetConfig().TotalShards)
 	}
 
-	// Write shards to nodes
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	writeErrors := make(map[string]error)
@@ -330,10 +339,15 @@ func (w *ErasureWriter) Write(ctx context.Context, key string, data []byte) erro
 		go func(shardIndex int, nid string, shardData []byte) {
 			defer wg.Done()
 
-			err := w.writeShardToNode(ctx, key, shardIndex, nid, shardData)
+			var writeErr error
+			if w.testWriteErr {
+				writeErr = fmt.Errorf("test write error")
+			} else {
+				writeErr = w.writeShardToNode(ctx, key, shardIndex, nid, shardData)
+			}
 			mu.Lock()
-			if err != nil {
-				writeErrors[nid] = err
+			if writeErr != nil {
+				writeErrors[nid] = writeErr
 			}
 			mu.Unlock()
 		}(i, nodeID, shards[i])
@@ -369,7 +383,10 @@ func (w *ErasureWriter) Read(ctx context.Context, key string) ([]byte, error) {
 	config := w.coder.GetConfig()
 	targetNodes := w.ring.GetNNodes(key, config.TotalShards)
 
-	// Read shards from nodes
+	if len(targetNodes) == 0 {
+		return nil, fmt.Errorf("no target nodes available")
+	}
+
 	shards := make([][]byte, config.TotalShards)
 
 	var wg sync.WaitGroup
@@ -391,7 +408,6 @@ func (w *ErasureWriter) Read(ctx context.Context, key string) ([]byte, error) {
 
 	wg.Wait()
 
-	// Check how many shards we got
 	available := 0
 	for _, shard := range shards {
 		if shard != nil {
@@ -403,7 +419,6 @@ func (w *ErasureWriter) Read(ctx context.Context, key string) ([]byte, error) {
 		return nil, fmt.Errorf("not enough shards to reconstruct: have %d, need %d", available, config.DataShards)
 	}
 
-	// Decode data
 	return w.coder.Decode(shards)
 }
 

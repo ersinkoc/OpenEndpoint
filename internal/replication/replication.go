@@ -11,33 +11,33 @@ import (
 
 // Replication manages bucket replication
 type Replication struct {
-	mu        sync.RWMutex
-	rules     map[string][]*Rule // bucketName -> rules
-	stats     map[string]*Stats  // bucketName -> stats
-	status    map[string]string  // bucketName -> status
+	mu     sync.RWMutex
+	rules  map[string][]*Rule // bucketName -> rules
+	stats  map[string]*Stats  // bucketName -> stats
+	status map[string]string  // bucketName -> status
 }
 
 // Rule represents a replication rule
 type Rule struct {
-	ID                    string         `json:"id" yaml:"id"`
-	Name                  string         `json:"name" yaml:"name"`
-	Priority              int            `json:"priority" yaml:"priority"`
-	Status                string         `json:"status" yaml:"status"` // Enabled, Disabled
-	Filter               *Filter        `json:"filter" yaml:"filter"`
-	Destination          *Destination   `json:"destination" yaml:"destination"`
-	DeleteMarkerReplication *DeleteMarkerReplication `json:"deleteMarkerReplication" yaml:"deleteMarkerReplication"`
+	ID                        string                     `json:"id" yaml:"id"`
+	Name                      string                     `json:"name" yaml:"name"`
+	Priority                  int                        `json:"priority" yaml:"priority"`
+	Status                    string                     `json:"status" yaml:"status"` // Enabled, Disabled
+	Filter                    *Filter                    `json:"filter" yaml:"filter"`
+	Destination               *Destination               `json:"destination" yaml:"destination"`
+	DeleteMarkerReplication   *DeleteMarkerReplication   `json:"deleteMarkerReplication" yaml:"deleteMarkerReplication"`
 	ExistingObjectReplication *ExistingObjectReplication `json:"existingObjectReplication" yaml:"existingObjectReplication"`
-	ReplicaModifications *ReplicaModifications `json:"replicaModifications" yaml:"replicaModifications"`
-	ReplicationTime      *ReplicationTime `json:"replicationTime" yaml:"replicationTime"`
-	CreatedAt            time.Time       `json:"createdAt" yaml:"createdAt"`
-	ModifiedAt           time.Time       `json:"modifiedAt" yaml:"modifiedAt"`
+	ReplicaModifications      *ReplicaModifications      `json:"replicaModifications" yaml:"replicaModifications"`
+	ReplicationTime           *ReplicationTime           `json:"replicationTime" yaml:"replicationTime"`
+	CreatedAt                 time.Time                  `json:"createdAt" yaml:"createdAt"`
+	ModifiedAt                time.Time                  `json:"modifiedAt" yaml:"modifiedAt"`
 }
 
 // Filter represents the filter for a rule
 type Filter struct {
-	Prefix            string            `json:"prefix,omitempty" yaml:"prefix,omitempty"`
-	Tag              *Tag              `json:"tag,omitempty" yaml:"tag,omitempty"`
-	And              *AndFilter        `json:"and,omitempty" yaml:"and,omitempty"`
+	Prefix string     `json:"prefix,omitempty" yaml:"prefix,omitempty"`
+	Tag    *Tag       `json:"tag,omitempty" yaml:"tag,omitempty"`
+	And    *AndFilter `json:"and,omitempty" yaml:"and,omitempty"`
 }
 
 // Tag represents a tag filter
@@ -54,13 +54,13 @@ type AndFilter struct {
 
 // Destination represents the replication destination
 type Destination struct {
-	Bucket             string   `json:"bucket" yaml:"bucket"`
-	StorageClass       string   `json:"storageClass,omitempty" yaml:"storageClass,omitempty"`
-	EncryptionType     string   `json:"encryptionType,omitempty" yaml:"encryptionType,omitempty"`
-	ReplicaKmsKeyID    string   `json:"replicaKmsKeyID,omitempty" yaml:"replicaKmsKeyID,omitempty"`
+	Bucket                   string                    `json:"bucket" yaml:"bucket"`
+	StorageClass             string                    `json:"storageClass,omitempty" yaml:"storageClass,omitempty"`
+	EncryptionType           string                    `json:"encryptionType,omitempty" yaml:"encryptionType,omitempty"`
+	ReplicaKmsKeyID          string                    `json:"replicaKmsKeyID,omitempty" yaml:"replicaKmsKeyID,omitempty"`
 	AccessControlTranslation *AccessControlTranslation `json:"accessControlTranslation,omitempty" yaml:"accessControlTranslation,omitempty"`
-	Metrics            *Metrics `json:"metrics,omitempty" yaml:"metrics,omitempty"`
-	ReplicationTime    *ReplicationTime `json:"replicationTime,omitempty" yaml:"replicationTime,omitempty"`
+	Metrics                  *Metrics                  `json:"metrics,omitempty" yaml:"metrics,omitempty"`
+	ReplicationTime          *ReplicationTime          `json:"replicationTime,omitempty" yaml:"replicationTime,omitempty"`
 }
 
 // AccessControlTranslation represents access control translation
@@ -70,14 +70,14 @@ type AccessControlTranslation struct {
 
 // Metrics represents replication metrics
 type Metrics struct {
-	Status               string `json:"status" yaml:"status"`
-	EventThresholdMinutes int   `json:"eventThresholdMinutes" yaml:"eventThresholdMinutes"`
+	Status                string `json:"status" yaml:"status"`
+	EventThresholdMinutes int    `json:"eventThresholdMinutes" yaml:"eventThresholdMinutes"`
 }
 
 // ReplicationTime represents replication time configuration
 type ReplicationTime struct {
-	Status string `json:"status" yaml:"status"`
-	Minutes int   `json:"minutes" yaml:"minutes"`
+	Status  string `json:"status" yaml:"status"`
+	Minutes int    `json:"minutes" yaml:"minutes"`
 }
 
 // DeleteMarkerReplication represents delete marker replication
@@ -97,12 +97,12 @@ type ReplicaModifications struct {
 
 // Stats represents replication statistics
 type Stats struct {
-	ReplicatedObjects      int64     `json:"replicatedObjects" yaml:"replicatedObjects"`
-	ReplicatedBytes       int64     `json:"replicatedBytes" yaml:"replicatedBytes"`
-	PendingReplication    int64     `json:"pendingReplication" yaml:"pendingReplication"`
-	FailedReplication     int64     `json:"failedReplication" yaml:"failedReplication"`
-	LastReplicationTime   time.Time `json:"lastReplicationTime" yaml:"lastReplicationTime"`
-	Latency                int64     `json:"latency" yaml:"latency"` // in milliseconds
+	ReplicatedObjects   int64     `json:"replicatedObjects" yaml:"replicatedObjects"`
+	ReplicatedBytes     int64     `json:"replicatedBytes" yaml:"replicatedBytes"`
+	PendingReplication  int64     `json:"pendingReplication" yaml:"pendingReplication"`
+	FailedReplication   int64     `json:"failedReplication" yaml:"failedReplication"`
+	LastReplicationTime time.Time `json:"lastReplicationTime" yaml:"lastReplicationTime"`
+	Latency             int64     `json:"latency" yaml:"latency"` // in milliseconds
 }
 
 // DestinationStatus represents the status of a destination
@@ -431,10 +431,11 @@ func (r *Replication) GetTotalReplicatedBytes() int64 {
 	return total
 }
 
-// generateRuleID generates a unique rule ID
+var randRead = rand.Read
+
 func generateRuleID() string {
 	b := make([]byte, 4)
-	if _, err := rand.Read(b); err != nil {
+	if _, err := randRead(b); err != nil {
 		return fmt.Sprintf("replication-rule-%d", time.Now().UnixNano())
 	}
 	return fmt.Sprintf("replication-rule-%s", hex.EncodeToString(b))

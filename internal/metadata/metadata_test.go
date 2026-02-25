@@ -7,74 +7,36 @@ import (
 
 func TestBucketMetadata(t *testing.T) {
 	meta := &BucketMetadata{
-		Name:      "test-bucket",
-		CreatedAt: time.Now(),
+		Name:         "test-bucket",
+		CreationDate: time.Now().Unix(),
+		Owner:        "owner123",
+		Region:       "us-east-1",
 	}
 
 	if meta.Name != "test-bucket" {
 		t.Errorf("Name = %s, want test-bucket", meta.Name)
 	}
+	if meta.Region != "us-east-1" {
+		t.Errorf("Region = %s, want us-east-1", meta.Region)
+	}
 }
 
 func TestObjectMetadata(t *testing.T) {
 	meta := &ObjectMetadata{
-		Key:         "test-key",
-		Size:        1024,
-		ContentType: "application/json",
-		ETag:        "abc123",
+		Key:          "test-key",
+		Bucket:       "test-bucket",
+		Size:         1024,
+		ETag:         "abc123",
+		ContentType:  "application/json",
+		StorageClass: "STANDARD",
+		LastModified: time.Now().Unix(),
 	}
 
 	if meta.Key != "test-key" {
 		t.Errorf("Key = %s, want test-key", meta.Key)
 	}
-
 	if meta.Size != 1024 {
 		t.Errorf("Size = %d, want 1024", meta.Size)
-	}
-}
-
-func TestVersionInfo(t *testing.T) {
-	version := &VersionInfo{
-		VersionID:     "v1",
-		IsLatest:      true,
-		LastModified:  time.Now(),
-		Size:          1024,
-	}
-
-	if version.VersionID != "v1" {
-		t.Errorf("VersionID = %s, want v1", version.VersionID)
-	}
-
-	if !version.IsLatest {
-		t.Error("IsLatest should be true")
-	}
-}
-
-func TestLifecycleRule(t *testing.T) {
-	days := 30
-	rule := &LifecycleRule{
-		ID:         "rule-1",
-		Status:     "Enabled",
-		Expiration: &LifecycleExpiration{Days: &days},
-	}
-
-	if rule.ID != "rule-1" {
-		t.Errorf("ID = %s, want rule-1", rule.ID)
-	}
-
-	if rule.Status != "Enabled" {
-		t.Errorf("Status = %s, want Enabled", rule.Status)
-	}
-}
-
-func TestReplicationConfig(t *testing.T) {
-	config := &ReplicationConfig{
-		Role:    "arn:aws:iam::123456789012:role/replication-role",
-		Rules:   []ReplicationRule{},
-	}
-
-	if config.Role == "" {
-		t.Error("Role should not be empty")
 	}
 }
 
@@ -84,6 +46,7 @@ func TestCORSConfiguration(t *testing.T) {
 			{
 				AllowedOrigins: []string{"*"},
 				AllowedMethods: []string{"GET", "PUT"},
+				AllowedHeaders: []string{"*"},
 			},
 		},
 	}
@@ -91,93 +54,187 @@ func TestCORSConfiguration(t *testing.T) {
 	if len(cors.CORSRules) != 1 {
 		t.Errorf("Rules count = %d, want 1", len(cors.CORSRules))
 	}
+	if len(cors.CORSRules[0].AllowedMethods) != 2 {
+		t.Errorf("AllowedMethods count = %d, want 2", len(cors.CORSRules[0].AllowedMethods))
+	}
 }
 
-func TestBucketPolicy(t *testing.T) {
-	policy := &BucketPolicy{
-		Version: "2012-10-17",
-		Statement: []PolicyStatement{
-			{
-				Effect:    "Allow",
-				Actions:   []string{"s3:GetObject"},
-				Resources: []string{"arn:aws:s3:::my-bucket/*"},
-			},
+func TestLifecycleRule(t *testing.T) {
+	rule := &LifecycleRule{
+		ID:     "rule-1",
+		Prefix: "logs/",
+		Status: "Enabled",
+		Expiration: &Expiration{
+			Days: 30,
 		},
 	}
 
-	if policy.Version != "2012-10-17" {
-		t.Errorf("Version = %s, want 2012-10-17", policy.Version)
+	if rule.ID != "rule-1" {
+		t.Errorf("ID = %s, want rule-1", rule.ID)
 	}
-}
-
-func TestBucketEncryption(t *testing.T) {
-	encryption := &BucketEncryption{
-		Algorithm: "AES256",
+	if rule.Status != "Enabled" {
+		t.Errorf("Status = %s, want Enabled", rule.Status)
 	}
-
-	if encryption.Algorithm != "AES256" {
-		t.Errorf("Algorithm = %s, want AES256", encryption.Algorithm)
+	if rule.Expiration == nil {
+		t.Fatal("Expiration should not be nil")
+	}
+	if rule.Expiration.Days != 30 {
+		t.Errorf("Days = %d, want 30", rule.Expiration.Days)
 	}
 }
 
 func TestBucketVersioning(t *testing.T) {
 	versioning := &BucketVersioning{
 		Status:    "Enabled",
-		MfaDelete: "Disabled",
+		MFADelete: "Disabled",
 	}
 
 	if versioning.Status != "Enabled" {
 		t.Errorf("Status = %s, want Enabled", versioning.Status)
 	}
+	if versioning.MFADelete != "Disabled" {
+		t.Errorf("MFADelete = %s, want Disabled", versioning.MFADelete)
+	}
 }
 
 func TestObjectLockConfig(t *testing.T) {
-	days := 30
 	config := &ObjectLockConfig{
-		ObjectLockEnabled: "Enabled",
-		DefaultRetention: &DefaultRetention{
-			Mode: "COMPLIANCE",
-			Days: &days,
+		Enabled: true,
+	}
+
+	if !config.Enabled {
+		t.Error("Enabled should be true")
+	}
+}
+
+func TestReplicationConfig(t *testing.T) {
+	config := &ReplicationConfig{
+		Role: "arn:aws:iam::123456789012:role/replication-role",
+		Rules: []ReplicationRule{
+			{
+				ID:     "rule-1",
+				Status: "Enabled",
+				Prefix: "",
+				Destination: Destination{
+					Bucket:       "dest-bucket",
+					StorageClass: "STANDARD",
+				},
+			},
 		},
 	}
 
-	if config.ObjectLockEnabled != "Enabled" {
-		t.Errorf("ObjectLockEnabled = %s, want Enabled", config.ObjectLockEnabled)
+	if config.Role == "" {
+		t.Error("Role should not be empty")
+	}
+	if len(config.Rules) != 1 {
+		t.Errorf("Rules count = %d, want 1", len(config.Rules))
 	}
 }
 
-func TestTag(t *testing.T) {
-	tag := &Tag{
-		Key:   "environment",
-		Value: "production",
-	}
-
-	if tag.Key != "environment" {
-		t.Errorf("Key = %s, want environment", tag.Key)
-	}
-}
-
-func TestPartMetadata(t *testing.T) {
-	part := &PartMetadata{
-		PartNumber:   1,
-		Size:         1024,
-		ETag:         "part-etag",
-		LastModified: time.Now(),
+func TestPartInfo(t *testing.T) {
+	part := &PartInfo{
+		PartNumber: 1,
+		ETag:       "etag123",
+		Size:       1024,
 	}
 
 	if part.PartNumber != 1 {
 		t.Errorf("PartNumber = %d, want 1", part.PartNumber)
 	}
+	if part.ETag != "etag123" {
+		t.Errorf("ETag = %s, want etag123", part.ETag)
+	}
 }
 
-func TestMultipartUploadMetadata(t *testing.T) {
-	upload := &MultipartUploadMetadata{
-		UploadID:    "upload-123",
-		Key:         "test-key",
-		InitiatedAt: time.Now(),
+func TestObjectMetadata_MarshalJSON(t *testing.T) {
+	now := time.Now().Unix()
+	meta := &ObjectMetadata{
+		Key:          "test-key",
+		Bucket:       "test-bucket",
+		Size:         1024,
+		ETag:         "abc123",
+		ContentType:  "application/json",
+		StorageClass: "STANDARD",
+		LastModified: now,
 	}
 
-	if upload.UploadID != "upload-123" {
-		t.Errorf("UploadID = %s, want upload-123", upload.UploadID)
+	data, err := meta.MarshalJSON()
+	if err != nil {
+		t.Fatalf("MarshalJSON() error = %v", err)
+	}
+	if len(data) == 0 {
+		t.Error("MarshalJSON() returned empty data")
+	}
+}
+
+func TestObjectMetadata_UnmarshalJSON(t *testing.T) {
+	jsonData := `{"key":"test-key","bucket":"test-bucket","size":1024,"etag":"abc123","content_type":"application/json","storage_class":"STANDARD","last_modified":"2024-01-01T00:00:00Z"}`
+
+	var meta ObjectMetadata
+	err := meta.UnmarshalJSON([]byte(jsonData))
+	if err != nil {
+		t.Fatalf("UnmarshalJSON() error = %v", err)
+	}
+	if meta.Key != "test-key" {
+		t.Errorf("Key = %s, want test-key", meta.Key)
+	}
+	if meta.Bucket != "test-bucket" {
+		t.Errorf("Bucket = %s, want test-bucket", meta.Bucket)
+	}
+}
+
+func TestObjectMetadata_UnmarshalJSON_EmptyLastModified(t *testing.T) {
+	jsonData := `{"key":"test-key","bucket":"test-bucket","size":1024,"etag":"abc123"}`
+
+	var meta ObjectMetadata
+	err := meta.UnmarshalJSON([]byte(jsonData))
+	if err != nil {
+		t.Fatalf("UnmarshalJSON() error = %v", err)
+	}
+	if meta.LastModified != 0 {
+		t.Errorf("LastModified = %d, want 0", meta.LastModified)
+	}
+}
+
+func TestObjectMetadata_UnmarshalJSON_Invalid(t *testing.T) {
+	var meta ObjectMetadata
+	err := meta.UnmarshalJSON([]byte(`invalid json`))
+	if err == nil {
+		t.Error("UnmarshalJSON() should return error for invalid JSON")
+	}
+}
+
+func TestObjectMetadata_RoundTrip(t *testing.T) {
+	now := time.Now().Unix()
+	original := &ObjectMetadata{
+		Key:          "test-key",
+		Bucket:       "test-bucket",
+		Size:         1024,
+		ETag:         "abc123",
+		ContentType:  "application/json",
+		StorageClass: "STANDARD",
+		LastModified: now,
+		Metadata:     map[string]string{"custom": "value"},
+	}
+
+	data, err := original.MarshalJSON()
+	if err != nil {
+		t.Fatalf("MarshalJSON() error = %v", err)
+	}
+
+	var decoded ObjectMetadata
+	err = decoded.UnmarshalJSON(data)
+	if err != nil {
+		t.Fatalf("UnmarshalJSON() error = %v", err)
+	}
+
+	if decoded.Key != original.Key {
+		t.Errorf("Key = %s, want %s", decoded.Key, original.Key)
+	}
+	if decoded.Bucket != original.Bucket {
+		t.Errorf("Bucket = %s, want %s", decoded.Bucket, original.Bucket)
+	}
+	if decoded.Size != original.Size {
+		t.Errorf("Size = %d, want %d", decoded.Size, original.Size)
 	}
 }

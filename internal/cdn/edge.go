@@ -35,18 +35,18 @@ type CDNConfig struct {
 
 // EdgeConfig contains edge configuration
 type EdgeConfig struct {
-	CDN             CDNConfig
-	Bucket          string
-	Enabled         bool
-	Domain          string
-	SSLEnabled      bool
-	CustomOrigins   []string
+	CDN           CDNConfig
+	Bucket        string
+	Enabled       bool
+	Domain        string
+	SSLEnabled    bool
+	CustomOrigins []string
 }
 
 // CacheInvalidation represents a cache invalidation request
 type CacheInvalidation struct {
 	ID        string    `json:"id"`
-	Paths     []string `json:"paths"`
+	Paths     []string  `json:"paths"`
 	Status    string    `json:"status"` // pending, in_progress, complete, failed
 	CreatedAt time.Time `json:"created_at"`
 	Progress  int       `json:"progress"`
@@ -54,10 +54,10 @@ type CacheInvalidation struct {
 
 // EdgeManager manages CDN edge integration
 type EdgeManager struct {
-	config  EdgeConfig
-	logger  *zap.Logger
-	mu      sync.RWMutex
-	client  CDNClient
+	config        EdgeConfig
+	logger        *zap.Logger
+	mu            sync.RWMutex
+	client        CDNClient
 	invalidations map[string]*CacheInvalidation
 }
 
@@ -68,11 +68,27 @@ type CDNClient interface {
 	CreatePresignedURL(path string, expiry time.Duration) (string, error)
 }
 
+var newCloudflareClient = func(config CDNConfig, logger *zap.Logger) (CDNClient, error) {
+	return NewCloudflareClient(config, logger)
+}
+
+var newFastlyClient = func(config CDNConfig, logger *zap.Logger) (CDNClient, error) {
+	return NewFastlyClient(config, logger)
+}
+
+var newAkamaiClient = func(config CDNConfig, logger *zap.Logger) (CDNClient, error) {
+	return NewAkamaiClient(config, logger)
+}
+
+var newCloudFrontClient = func(config CDNConfig, logger *zap.Logger) (CDNClient, error) {
+	return NewCloudFrontClient(config, logger)
+}
+
 // NewEdgeManager creates a new edge manager
 func NewEdgeManager(config EdgeConfig, logger *zap.Logger) (*EdgeManager, error) {
 	m := &EdgeManager{
-		config: config,
-		logger: logger,
+		config:        config,
+		logger:        logger,
 		invalidations: make(map[string]*CacheInvalidation),
 	}
 
@@ -82,13 +98,13 @@ func NewEdgeManager(config EdgeConfig, logger *zap.Logger) (*EdgeManager, error)
 
 	switch config.CDN.Provider {
 	case CDNCloudflare:
-		client, err = NewCloudflareClient(config.CDN, logger)
+		client, err = newCloudflareClient(config.CDN, logger)
 	case CDNFastly:
-		client, err = NewFastlyClient(config.CDN, logger)
+		client, err = newFastlyClient(config.CDN, logger)
 	case CDNAkamai:
-		client, err = NewAkamaiClient(config.CDN, logger)
+		client, err = newAkamaiClient(config.CDN, logger)
 	case CDNCloudFront:
-		client, err = NewCloudFrontClient(config.CDN, logger)
+		client, err = newCloudFrontClient(config.CDN, logger)
 	default:
 		return nil, fmt.Errorf("unsupported CDN provider: %s", config.CDN.Provider)
 	}
@@ -230,8 +246,8 @@ func (m *EdgeManager) GetInvalidation(id string) (*CacheInvalidation, bool) {
 
 // CloudflareClient implements CDNClient for Cloudflare
 type CloudflareClient struct {
-	config  CDNConfig
-	logger  *zap.Logger
+	config CDNConfig
+	logger *zap.Logger
 }
 
 // NewCloudflareClient creates a new Cloudflare client
@@ -270,8 +286,8 @@ func (c *CloudflareClient) CreatePresignedURL(path string, expiry time.Duration)
 
 // FastlyClient implements CDNClient for Fastly
 type FastlyClient struct {
-	config  CDNConfig
-	logger  *zap.Logger
+	config CDNConfig
+	logger *zap.Logger
 }
 
 // NewFastlyClient creates a new Fastly client
@@ -301,8 +317,8 @@ func (c *FastlyClient) CreatePresignedURL(path string, expiry time.Duration) (st
 
 // AkamaiClient implements CDNClient for Akamai
 type AkamaiClient struct {
-	config  CDNConfig
-	logger  *zap.Logger
+	config CDNConfig
+	logger *zap.Logger
 }
 
 // NewAkamaiClient creates a new Akamai client
@@ -332,8 +348,8 @@ func (c *AkamaiClient) CreatePresignedURL(path string, expiry time.Duration) (st
 
 // CloudFrontClient implements CDNClient for CloudFront
 type CloudFrontClient struct {
-	config  CDNConfig
-	logger  *zap.Logger
+	config CDNConfig
+	logger *zap.Logger
 }
 
 // NewCloudFrontClient creates a new CloudFront client

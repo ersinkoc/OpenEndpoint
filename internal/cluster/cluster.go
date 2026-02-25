@@ -11,10 +11,10 @@ import (
 
 // Cluster represents the main cluster manager
 type Cluster struct {
-	config       ClusterConfig
-	logger       *zap.Logger
-	manager      *Manager
-	ring         *HashRing
+	config      ClusterConfig
+	logger      *zap.Logger
+	manager     *Manager
+	ring        *HashRing
 	replicator  *Replicator
 	erasurer    *ErasureCoder
 	rebalancer  *Rebalancer
@@ -22,6 +22,9 @@ type Cluster struct {
 	mu          sync.RWMutex
 	initialized bool
 	startTime   time.Time
+
+	testManagerStartErr bool
+	testErasureCoderErr bool
 }
 
 // ClusterOption is a function that modifies cluster config
@@ -79,8 +82,8 @@ func NewCluster(logger *zap.Logger, opts ...ClusterOption) *Cluster {
 		ProtocolVersion: 2,
 		SeedNodes:       []string{},
 		Metadata: NodeMetadata{
-			Region:  "default",
-			Zone:    "default",
+			Region:   "default",
+			Zone:     "default",
 			DiskType: "SSD",
 		},
 	}
@@ -90,8 +93,8 @@ func NewCluster(logger *zap.Logger, opts ...ClusterOption) *Cluster {
 	}
 
 	return &Cluster{
-		config: cfg,
-		logger: logger,
+		config:    cfg,
+		logger:    logger,
 		startTime: time.Now(),
 	}
 }
@@ -103,38 +106,38 @@ func (c *Cluster) Initialize(ctx context.Context, rf ReplicationFactor) error {
 		zap.String("address", c.config.BindAddr),
 		zap.Int("port", c.config.BindPort))
 
-	// Create manager
 	c.manager = NewManager(c.config, c.logger)
 
-	// Start manager
-	if err := c.manager.Start(ctx); err != nil {
+	err := c.manager.Start(ctx)
+	if c.testManagerStartErr {
+		err = fmt.Errorf("test error")
+	}
+	if err != nil {
 		return fmt.Errorf("failed to start cluster manager: %w", err)
 	}
 
-	// Create hash ring
 	c.ring = NewHashRing()
 
-	// Add local node to ring
 	localNode := c.manager.GetLocalNode()
 	c.ring.AddNode(localNode)
 
-	// Create replicator
 	c.replicator = NewReplicator(c.manager, c.ring, rf, c.logger)
 
-	// Create erasure coder
 	erasureCfg := DefaultErasureConfig()
 	erasurer, err := NewErasureCoder(erasureCfg, c.logger)
+	if c.testErasureCoderErr {
+		erasurer = nil
+		err = fmt.Errorf("test error")
+	}
 	if err != nil {
 		return fmt.Errorf("failed to create erasure coder: %w", err)
 	}
 	c.erasurer = erasurer
 
-	// Create rebalancer
 	rebalanceCfg := DefaultRebalanceConfig()
 	c.rebalancer = NewRebalancer(rebalanceCfg, c.manager, c.ring, c.logger)
 	c.rebalancer.Start(ctx)
 
-	// Create backup manager
 	c.backupMgr = NewBackupManager(c.logger)
 
 	c.initialized = true
@@ -235,11 +238,11 @@ func (c *Cluster) GetClusterInfo() ClusterInfo {
 	defer c.mu.RUnlock()
 
 	return ClusterInfo{
-		NodeID:        c.config.NodeID,
-		NodeName:      c.config.NodeName,
-		ClusterSize:   c.manager.NodeCount(),
-		IsLeader:      c.manager.IsLeader(),
-		Uptime:        time.Since(c.startTime).String(),
+		NodeID:            c.config.NodeID,
+		NodeName:          c.config.NodeName,
+		ClusterSize:       c.manager.NodeCount(),
+		IsLeader:          c.manager.IsLeader(),
+		Uptime:            time.Since(c.startTime).String(),
 		ReplicationFactor: int(c.replicator.GetReplicationFactor()),
 	}
 }
@@ -251,10 +254,10 @@ func (c *Cluster) GetRingDistribution() map[string]int {
 
 // ClusterInfo contains cluster information
 type ClusterInfo struct {
-	NodeID             string `json:"node_id"`
-	NodeName           string `json:"node_name"`
-	ClusterSize        int    `json:"cluster_size"`
-	IsLeader           bool   `json:"is_leader"`
-	Uptime             string `json:"uptime"`
-	ReplicationFactor  int    `json:"replication_factor"`
+	NodeID            string `json:"node_id"`
+	NodeName          string `json:"node_name"`
+	ClusterSize       int    `json:"cluster_size"`
+	IsLeader          bool   `json:"is_leader"`
+	Uptime            string `json:"uptime"`
+	ReplicationFactor int    `json:"replication_factor"`
 }

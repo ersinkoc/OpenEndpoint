@@ -1,6 +1,7 @@
 package bucketconfig
 
 import (
+	"errors"
 	"testing"
 	"time"
 )
@@ -28,34 +29,34 @@ func TestNew(t *testing.T) {
 	}
 }
 
-func TestSetVersioning(t *testing.T) {
+func TestSetVersioningConfig(t *testing.T) {
 	cfg := New()
 
 	versioning := &VersioningConfig{
 		Status:    "Enabled",
-		MfaDelete: "Disabled",
+		MFADelete: "Disabled",
 	}
 
-	err := cfg.SetVersioning("test-bucket", versioning)
+	err := cfg.SetVersioningConfig("test-bucket", versioning)
 	if err != nil {
-		t.Fatalf("SetVersioning failed: %v", err)
+		t.Fatalf("SetVersioningConfig failed: %v", err)
 	}
 }
 
-func TestGetVersioning(t *testing.T) {
+func TestGetVersioningConfig(t *testing.T) {
 	cfg := New()
 
 	// Test non-existent bucket
-	_, ok := cfg.GetVersioning("non-existent")
+	_, ok := cfg.GetVersioningConfig("non-existent")
 	if ok {
 		t.Error("Should not find versioning for non-existent bucket")
 	}
 
 	// Test existing bucket
 	versioning := &VersioningConfig{Status: "Enabled"}
-	cfg.SetVersioning("test-bucket", versioning)
+	cfg.SetVersioningConfig("test-bucket", versioning)
 
-	result, ok := cfg.GetVersioning("test-bucket")
+	result, ok := cfg.GetVersioningConfig("test-bucket")
 	if !ok {
 		t.Fatal("Should find versioning")
 	}
@@ -65,12 +66,34 @@ func TestGetVersioning(t *testing.T) {
 	}
 }
 
+func TestIsVersioningEnabled(t *testing.T) {
+	cfg := New()
+
+	// Test disabled (default)
+	if cfg.IsVersioningEnabled("test-bucket") {
+		t.Error("Versioning should not be enabled by default")
+	}
+
+	// Test enabled
+	versioning := &VersioningConfig{Status: "Enabled"}
+	cfg.SetVersioningConfig("test-bucket", versioning)
+
+	if !cfg.IsVersioningEnabled("test-bucket") {
+		t.Error("Versioning should be enabled")
+	}
+}
+
 func TestSetCORSConfig(t *testing.T) {
 	cfg := New()
 
 	cors := &CORSConfig{
-		AllowedOrigins: []string{"*"},
-		AllowedMethods: []string{"GET", "PUT"},
+		Bucket: "test-bucket",
+		CORSRules: []*CORSRule{
+			{
+				AllowedOrigins: []string{"*"},
+				AllowedMethods: []string{"GET", "PUT"},
+			},
+		},
 	}
 
 	err := cfg.SetCORSConfig("test-bucket", cors)
@@ -89,7 +112,14 @@ func TestGetCORSConfig(t *testing.T) {
 	}
 
 	// Test existing
-	cors := &CORSConfig{AllowedOrigins: []string{"https://example.com"}}
+	cors := &CORSConfig{
+		Bucket: "test-bucket",
+		CORSRules: []*CORSRule{
+			{
+				AllowedOrigins: []string{"https://example.com"},
+			},
+		},
+	}
 	cfg.SetCORSConfig("test-bucket", cors)
 
 	result, ok := cfg.GetCORSConfig("test-bucket")
@@ -97,15 +127,20 @@ func TestGetCORSConfig(t *testing.T) {
 		t.Fatal("Should find CORS config")
 	}
 
-	if len(result.AllowedOrigins) != 1 {
-		t.Errorf("AllowedOrigins length = %d, want 1", len(result.AllowedOrigins))
+	if len(result.CORSRules) != 1 {
+		t.Errorf("CORSRules length = %d, want 1", len(result.CORSRules))
 	}
 }
 
 func TestDeleteCORSConfig(t *testing.T) {
 	cfg := New()
 
-	cors := &CORSConfig{AllowedOrigins: []string{"*"}}
+	cors := &CORSConfig{
+		Bucket: "test-bucket",
+		CORSRules: []*CORSRule{
+			{AllowedOrigins: []string{"*"}},
+		},
+	}
 	cfg.SetCORSConfig("test-bucket", cors)
 
 	err := cfg.DeleteCORSConfig("test-bucket")
@@ -124,11 +159,12 @@ func TestSetBucketPolicy(t *testing.T) {
 
 	policy := &BucketPolicy{
 		Version: "2012-10-17",
-		Statement: []PolicyStatement{
+		Statement: []*PolicyStatement{
 			{
-				Effect:   "Allow",
-				Actions:  []string{"s3:GetObject"},
-				Resources: []string{"arn:aws:s3:::test-bucket/*"},
+				Effect:    "Allow",
+				Principal: "*",
+				Action:    "s3:GetObject",
+				Resource:  "arn:aws:s3:::test-bucket/*",
 			},
 		},
 	}
@@ -183,11 +219,10 @@ func TestSetObjectLockConfig(t *testing.T) {
 	cfg := New()
 
 	lock := &ObjectLockConfig{
-		ObjectLockEnabled: "Enabled",
-		DefaultRetention: &DefaultRetention{
-			Mode: "COMPLIANCE",
-			Days: 30,
-		},
+		Enabled:          true,
+		RetentionMode:    "Compliance",
+		RetentionDays:    30,
+		LegalHoldEnabled: false,
 	}
 
 	err := cfg.SetObjectLockConfig("test-bucket", lock)
@@ -206,7 +241,7 @@ func TestGetObjectLockConfig(t *testing.T) {
 	}
 
 	// Test existing
-	lock := &ObjectLockConfig{ObjectLockEnabled: "Enabled"}
+	lock := &ObjectLockConfig{Enabled: true}
 	cfg.SetObjectLockConfig("test-bucket", lock)
 
 	result, ok := cfg.GetObjectLockConfig("test-bucket")
@@ -214,8 +249,25 @@ func TestGetObjectLockConfig(t *testing.T) {
 		t.Fatal("Should find object lock config")
 	}
 
-	if result.ObjectLockEnabled != "Enabled" {
-		t.Errorf("ObjectLockEnabled = %s, want Enabled", result.ObjectLockEnabled)
+	if !result.Enabled {
+		t.Error("Object lock should be enabled")
+	}
+}
+
+func TestIsObjectLockEnabled(t *testing.T) {
+	cfg := New()
+
+	// Test disabled (default)
+	if cfg.IsObjectLockEnabled("test-bucket") {
+		t.Error("Object lock should not be enabled by default")
+	}
+
+	// Test enabled
+	lock := &ObjectLockConfig{Enabled: true}
+	cfg.SetObjectLockConfig("test-bucket", lock)
+
+	if !cfg.IsObjectLockEnabled("test-bucket") {
+		t.Error("Object lock should be enabled")
 	}
 }
 
@@ -303,34 +355,49 @@ func TestGenerateRandomID(t *testing.T) {
 	}
 }
 
+func TestGenerateRandomID_Fallback(t *testing.T) {
+	original := randRead
+	defer func() { randRead = original }()
+
+	randRead = func(b []byte) (int, error) {
+		return 0, errors.New("forced error")
+	}
+
+	id := generateRandomID()
+	if len(id) != 8 {
+		t.Errorf("Fallback ID length = %d, want 8", len(id))
+	}
+}
+
 func TestBucketPolicy_JSON(t *testing.T) {
 	policy := &BucketPolicy{
 		Version: "2012-10-17",
-		Statement: []PolicyStatement{
+		Statement: []*PolicyStatement{
 			{
 				Sid:       "PublicRead",
 				Effect:    "Allow",
-				Actions:   []string{"s3:GetObject"},
-				Resources: []string{"arn:aws:s3:::my-bucket/*"},
+				Principal: "*",
+				Action:    "s3:GetObject",
+				Resource:  "arn:aws:s3:::my-bucket/*",
 			},
 		},
 	}
 
-	// Test ToJSON
-	jsonBytes, err := policy.ToJSON()
+	// Test GetJSON
+	jsonStr, err := policy.GetJSON()
 	if err != nil {
-		t.Fatalf("ToJSON failed: %v", err)
+		t.Fatalf("GetJSON failed: %v", err)
 	}
 
-	if len(jsonBytes) == 0 {
+	if len(jsonStr) == 0 {
 		t.Error("JSON should not be empty")
 	}
 
-	// Test FromJSON
+	// Test SetPolicyFromJSON
 	newPolicy := &BucketPolicy{}
-	err = newPolicy.FromJSON(jsonBytes)
+	err = newPolicy.SetPolicyFromJSON(jsonStr)
 	if err != nil {
-		t.Fatalf("FromJSON failed: %v", err)
+		t.Fatalf("SetPolicyFromJSON failed: %v", err)
 	}
 
 	if newPolicy.Version != "2012-10-17" {
@@ -338,49 +405,136 @@ func TestBucketPolicy_JSON(t *testing.T) {
 	}
 }
 
-func TestCORSConfig_JSON(t *testing.T) {
-	cors := &CORSConfig{
-		AllowedOrigins: []string{"https://example.com"},
-		AllowedMethods: []string{"GET", "PUT", "POST"},
-		AllowedHeaders: []string{"*"},
-		MaxAgeSeconds:  3600,
+func TestValidateCORS(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  *CORSConfig
+		wantErr bool
+	}{
+		{
+			name: "valid CORS",
+			config: &CORSConfig{
+				CORSRules: []*CORSRule{
+					{
+						AllowedOrigins: []string{"*"},
+						AllowedMethods: []string{"GET"},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name:    "nil config",
+			config:  nil,
+			wantErr: true,
+		},
+		{
+			name: "no allowed methods",
+			config: &CORSConfig{
+				CORSRules: []*CORSRule{
+					{
+						AllowedOrigins: []string{"*"},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid method",
+			config: &CORSConfig{
+				CORSRules: []*CORSRule{
+					{
+						AllowedOrigins: []string{"*"},
+						AllowedMethods: []string{"INVALID"},
+					},
+				},
+			},
+			wantErr: true,
+		},
 	}
 
-	jsonBytes, err := cors.ToJSON()
-	if err != nil {
-		t.Fatalf("ToJSON failed: %v", err)
-	}
-
-	newCors := &CORSConfig{}
-	err = newCors.FromJSON(jsonBytes)
-	if err != nil {
-		t.Fatalf("FromJSON failed: %v", err)
-	}
-
-	if newCors.MaxAgeSeconds != 3600 {
-		t.Errorf("MaxAgeSeconds = %d, want 3600", newCors.MaxAgeSeconds)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateCORS(tt.config)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateCORS() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
 	}
 }
 
-func TestVersioningConfig_JSON(t *testing.T) {
-	versioning := &VersioningConfig{
-		Status:    "Enabled",
-		MfaDelete: "Disabled",
+func TestValidatePolicy(t *testing.T) {
+	tests := []struct {
+		name    string
+		policy  *BucketPolicy
+		wantErr bool
+	}{
+		{
+			name: "valid policy",
+			policy: &BucketPolicy{
+				Version: "2012-10-17",
+				Statement: []*PolicyStatement{
+					{
+						Effect:    "Allow",
+						Principal: "*",
+						Action:    "s3:GetObject",
+						Resource:  "arn:aws:s3:::bucket/*",
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name:    "nil policy",
+			policy:  nil,
+			wantErr: true,
+		},
+		{
+			name: "no statements",
+			policy: &BucketPolicy{
+				Version:   "2012-10-17",
+				Statement: []*PolicyStatement{},
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid effect",
+			policy: &BucketPolicy{
+				Version: "2012-10-17",
+				Statement: []*PolicyStatement{
+					{
+						Effect:    "Invalid",
+						Principal: "*",
+						Action:    "s3:GetObject",
+						Resource:  "arn:aws:s3:::bucket/*",
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "no principal",
+			policy: &BucketPolicy{
+				Version: "2012-10-17",
+				Statement: []*PolicyStatement{
+					{
+						Effect:   "Allow",
+						Action:   "s3:GetObject",
+						Resource: "arn:aws:s3:::bucket/*",
+					},
+				},
+			},
+			wantErr: true,
+		},
 	}
 
-	jsonBytes, err := versioning.ToJSON()
-	if err != nil {
-		t.Fatalf("ToJSON failed: %v", err)
-	}
-
-	newVersioning := &VersioningConfig{}
-	err = newVersioning.FromJSON(jsonBytes)
-	if err != nil {
-		t.Fatalf("FromJSON failed: %v", err)
-	}
-
-	if newVersioning.Status != "Enabled" {
-		t.Errorf("Status = %s, want Enabled", newVersioning.Status)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidatePolicy(tt.policy)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidatePolicy() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
 	}
 }
 
@@ -391,11 +545,14 @@ func TestConcurrentAccess(t *testing.T) {
 	// Concurrent writes
 	for i := 0; i < 100; i++ {
 		go func(id int) {
-			bucket := string(rune('A' + id))
-			cfg.SetVersioning(bucket, &VersioningConfig{Status: "Enabled"})
-			cfg.SetCORSConfig(bucket, &CORSConfig{})
-			cfg.SetBucketPolicy(bucket, &BucketPolicy{})
-			cfg.SetBucketTags(bucket, map[string]string{"id": string(rune('0' + id))})
+			bucket := string(rune('A' + id%26))
+			cfg.SetVersioningConfig(bucket, &VersioningConfig{Status: "Enabled"})
+			cfg.SetCORSConfig(bucket, &CORSConfig{
+				Bucket:    bucket,
+				CORSRules: []*CORSRule{{AllowedOrigins: []string{"*"}}},
+			})
+			cfg.SetBucketPolicy(bucket, &BucketPolicy{Version: "2012-10-17"})
+			cfg.SetBucketTags(bucket, map[string]string{"id": string(rune('0' + id%10))})
 			done <- true
 		}(i)
 	}
@@ -404,44 +561,223 @@ func TestConcurrentAccess(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		<-done
 	}
-
-	// Verify no data corruption
-	stats := cfg.GetStats()
-	if stats.TotalBuckets != 100 {
-		t.Errorf("TotalBuckets = %d, want 100", stats.TotalBuckets)
-	}
-}
-
-func TestConfig_GetStats(t *testing.T) {
-	cfg := New()
-
-	// Empty stats
-	stats := cfg.GetStats()
-	if stats.TotalBuckets != 0 {
-		t.Errorf("Empty TotalBuckets = %d, want 0", stats.TotalBuckets)
-	}
-
-	// Add some buckets
-	cfg.SetVersioning("bucket1", &VersioningConfig{Status: "Enabled"})
-	cfg.SetVersioning("bucket2", &VersioningConfig{Status: "Disabled"})
-	cfg.SetCORSConfig("bucket3", &CORSConfig{})
-
-	stats = cfg.GetStats()
-	if stats.TotalBuckets < 3 {
-		t.Errorf("TotalBuckets = %d, want at least 3", stats.TotalBuckets)
-	}
 }
 
 func TestModifiedTimestamp(t *testing.T) {
 	cfg := New()
 
 	before := time.Now()
-	cfg.SetVersioning("test-bucket", &VersioningConfig{Status: "Enabled"})
+	cfg.SetVersioningConfig("test-bucket", &VersioningConfig{Status: "Enabled"})
 	after := time.Now()
 
-	result, _ := cfg.GetVersioning("test-bucket")
+	result, _ := cfg.GetVersioningConfig("test-bucket")
 
 	if result.ModifiedDate.Before(before) || result.ModifiedDate.After(after) {
 		t.Error("ModifiedDate should be set to current time")
+	}
+}
+
+func TestToJSON(t *testing.T) {
+	cfg := New()
+
+	cfg.SetVersioningConfig("test-bucket", &VersioningConfig{Status: "Enabled"})
+	cfg.SetCORSConfig("test-bucket", &CORSConfig{
+		Bucket:    "test-bucket",
+		CORSRules: []*CORSRule{{AllowedOrigins: []string{"*"}}},
+	})
+
+	data, err := cfg.ToJSON("test-bucket")
+	if err != nil {
+		t.Fatalf("ToJSON failed: %v", err)
+	}
+
+	if len(data) == 0 {
+		t.Error("JSON should not be empty")
+	}
+}
+
+func TestDeleteBucketConfig(t *testing.T) {
+	cfg := New()
+
+	cfg.SetVersioningConfig("test-bucket", &VersioningConfig{Status: "Enabled"})
+	cfg.SetCORSConfig("test-bucket", &CORSConfig{Bucket: "test-bucket"})
+	cfg.SetBucketPolicy("test-bucket", &BucketPolicy{Version: "2012-10-17"})
+	cfg.SetObjectLockConfig("test-bucket", &ObjectLockConfig{Enabled: true})
+	cfg.SetBucketTags("test-bucket", map[string]string{"key": "value"})
+
+	err := cfg.DeleteBucketConfig("test-bucket")
+	if err != nil {
+		t.Fatalf("DeleteBucketConfig failed: %v", err)
+	}
+
+	// Verify all configs are deleted
+	_, ok := cfg.GetVersioningConfig("test-bucket")
+	if ok {
+		t.Error("Versioning should be deleted")
+	}
+	_, ok = cfg.GetCORSConfig("test-bucket")
+	if ok {
+		t.Error("CORS should be deleted")
+	}
+	_, ok = cfg.GetBucketPolicy("test-bucket")
+	if ok {
+		t.Error("Policy should be deleted")
+	}
+	_, ok = cfg.GetObjectLockConfig("test-bucket")
+	if ok {
+		t.Error("Object lock should be deleted")
+	}
+	_, ok = cfg.GetBucketTags("test-bucket")
+	if ok {
+		t.Error("Tags should be deleted")
+	}
+}
+
+func TestSetBucketConfig(t *testing.T) {
+	cfg := New()
+
+	bucketCfg := &BucketConfig{
+		Name:     "test-bucket",
+		Location: "us-east-1",
+		Owner:    "test-user",
+	}
+
+	cfg.SetBucketConfig("test-bucket", bucketCfg)
+
+	result, ok := cfg.GetBucketConfig("test-bucket")
+	if !ok {
+		t.Fatal("Should find bucket config")
+	}
+
+	if result.Name != "test-bucket" {
+		t.Errorf("Name = %s, want test-bucket", result.Name)
+	}
+}
+
+func TestListBucketConfigs(t *testing.T) {
+	cfg := New()
+
+	cfg.SetBucketConfig("bucket1", &BucketConfig{Name: "bucket1"})
+	cfg.SetBucketConfig("bucket2", &BucketConfig{Name: "bucket2"})
+	cfg.SetBucketConfig("bucket3", &BucketConfig{Name: "bucket3"})
+
+	configs := cfg.ListBucketConfigs()
+	if len(configs) != 3 {
+		t.Errorf("ListBucketConfigs() = %d, want 3", len(configs))
+	}
+}
+
+func TestSetBucketTags_ExistingBucket(t *testing.T) {
+	cfg := New()
+
+	cfg.SetBucketConfig("test-bucket", &BucketConfig{Name: "test-bucket", Location: "us-east-1"})
+
+	tags := map[string]string{"environment": "production"}
+	err := cfg.SetBucketTags("test-bucket", tags)
+	if err != nil {
+		t.Fatalf("SetBucketTags failed: %v", err)
+	}
+
+	bucketCfg, ok := cfg.GetBucketConfig("test-bucket")
+	if !ok {
+		t.Fatal("Bucket config should exist")
+	}
+	if bucketCfg.Tags["environment"] != "production" {
+		t.Errorf("Tags not updated in bucket config")
+	}
+}
+
+func TestDeleteBucketTags_ExistingBucket(t *testing.T) {
+	cfg := New()
+
+	cfg.SetBucketConfig("test-bucket", &BucketConfig{Name: "test-bucket"})
+	cfg.SetBucketTags("test-bucket", map[string]string{"key": "value"})
+
+	err := cfg.DeleteBucketTags("test-bucket")
+	if err != nil {
+		t.Fatalf("DeleteBucketTags failed: %v", err)
+	}
+
+	bucketCfg, ok := cfg.GetBucketConfig("test-bucket")
+	if !ok {
+		t.Fatal("Bucket config should exist")
+	}
+	if bucketCfg.Tags != nil {
+		t.Errorf("Tags should be nil in bucket config, got %v", bucketCfg.Tags)
+	}
+}
+
+func TestValidateCORS_NoAllowedOrigins(t *testing.T) {
+	config := &CORSConfig{
+		CORSRules: []*CORSRule{
+			{
+				AllowedMethods: []string{"GET"},
+				AllowedOrigins: []string{},
+			},
+		},
+	}
+
+	err := ValidateCORS(config)
+	if err == nil {
+		t.Error("ValidateCORS should return error for empty AllowedOrigins")
+	}
+}
+
+func TestValidatePolicy_EmptyVersion(t *testing.T) {
+	policy := &BucketPolicy{
+		Version: "",
+		Statement: []*PolicyStatement{
+			{
+				Effect:    "Allow",
+				Principal: "*",
+				Action:    "s3:GetObject",
+				Resource:  "arn:aws:s3:::bucket/*",
+			},
+		},
+	}
+
+	err := ValidatePolicy(policy)
+	if err != nil {
+		t.Fatalf("ValidatePolicy failed: %v", err)
+	}
+
+	if policy.Version != "2012-10-17" {
+		t.Errorf("Version = %s, want 2012-10-17", policy.Version)
+	}
+}
+
+func TestValidatePolicy_NoAction(t *testing.T) {
+	policy := &BucketPolicy{
+		Version: "2012-10-17",
+		Statement: []*PolicyStatement{
+			{
+				Effect:    "Allow",
+				Principal: "*",
+				Resource:  "arn:aws:s3:::bucket/*",
+			},
+		},
+	}
+
+	err := ValidatePolicy(policy)
+	if err == nil {
+		t.Error("ValidatePolicy should return error for nil Action")
+	}
+}
+
+func TestValidatePolicy_NoResource(t *testing.T) {
+	policy := &BucketPolicy{
+		Version: "2012-10-17",
+		Statement: []*PolicyStatement{
+			{
+				Effect:    "Allow",
+				Principal: "*",
+				Action:    "s3:GetObject",
+			},
+		},
+	}
+
+	err := ValidatePolicy(policy)
+	if err == nil {
+		t.Error("ValidatePolicy should return error for nil Resource")
 	}
 }

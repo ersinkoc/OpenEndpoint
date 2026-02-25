@@ -18,58 +18,59 @@ import (
 type EventType string
 
 const (
-	EventBucketCreated      EventType = "s3:BucketCreated"
-	EventBucketDeleted      EventType = "s3:BucketDeleted"
-	EventObjectPut          EventType = "s3:ObjectPut"
-	EventObjectGet          EventType = "s3:ObjectGet"
-	EventObjectDeleted      EventType = "s3:ObjectDeleted"
-	EventObjectCopy        EventType = "s3:ObjectCopy"
-	EventAccessKeyCreated   EventType = "iam:AccessKeyCreated"
-	EventUserCreated       EventType = "iam:UserCreated"
-	EventPolicyChanged     EventType = "iam:PolicyChanged"
-	EventLogin             EventType = "iam:Login"
-	EventLoginFailed       EventType = "iam:LoginFailed"
-	EventConfigChanged     EventType = "config:Changed"
+	EventBucketCreated    EventType = "s3:BucketCreated"
+	EventBucketDeleted    EventType = "s3:BucketDeleted"
+	EventObjectPut        EventType = "s3:ObjectPut"
+	EventObjectGet        EventType = "s3:ObjectGet"
+	EventObjectDeleted    EventType = "s3:ObjectDeleted"
+	EventObjectCopy       EventType = "s3:ObjectCopy"
+	EventAccessKeyCreated EventType = "iam:AccessKeyCreated"
+	EventUserCreated      EventType = "iam:UserCreated"
+	EventPolicyChanged    EventType = "iam:PolicyChanged"
+	EventLogin            EventType = "iam:Login"
+	EventLoginFailed      EventType = "iam:LoginFailed"
+	EventConfigChanged    EventType = "config:Changed"
 )
 
 // Event represents an audit event
 type Event struct {
-	ID              string                 `json:"id"`
-	Timestamp       time.Time              `json:"timestamp"`
-	EventType       EventType              `json:"event_type"`
-	TenantID        string                 `json:"tenant_id"`
-	UserID          string                 `json:"user_id"`
-	UserAgent       string                 `json:"user_agent"`
-	IPAddress       string                 `json:"ip_address"`
-	RequestID       string                 `json:"request_id"`
-	Resource        string                 `json:"resource"`
-	Action          string                 `json:"action"`
-	Status          string                 `json:"status"` // success, failure
-	ErrorMessage    string                 `json:"error_message,omitempty"`
-	Details         map[string]interface{} `json:"details,omitempty"`
-	RequestParams   map[string]interface{} `json:"request_params,omitempty"`
-	ResponseParams  map[string]interface{} `json:"response_params,omitempty"`
+	ID             string                 `json:"id"`
+	Timestamp      time.Time              `json:"timestamp"`
+	EventType      EventType              `json:"event_type"`
+	TenantID       string                 `json:"tenant_id"`
+	UserID         string                 `json:"user_id"`
+	UserAgent      string                 `json:"user_agent"`
+	IPAddress      string                 `json:"ip_address"`
+	RequestID      string                 `json:"request_id"`
+	Resource       string                 `json:"resource"`
+	Action         string                 `json:"action"`
+	Status         string                 `json:"status"` // success, failure
+	ErrorMessage   string                 `json:"error_message,omitempty"`
+	Details        map[string]interface{} `json:"details,omitempty"`
+	RequestParams  map[string]interface{} `json:"request_params,omitempty"`
+	ResponseParams map[string]interface{} `json:"response_params,omitempty"`
 }
 
 // Logger logs audit events
 type Logger struct {
-	config  LoggerConfig
-	logger  *zap.Logger
-	mu      sync.RWMutex
-	file    *os.File
-	writer  io.WriteCloser
-	stopCh  chan struct{}
-	closed  bool
+	config         LoggerConfig
+	logger         *zap.Logger
+	mu             sync.RWMutex
+	file           *os.File
+	writer         io.WriteCloser
+	stopCh         chan struct{}
+	closed         bool
+	rotationTicker <-chan time.Time
 }
 
 // LoggerConfig contains logger configuration
 type LoggerConfig struct {
-	OutputPath   string        // Path to log file
-	MaxSizeMB    int           // Max file size before rotation
-	MaxBackups   int           // Number of backup files to keep
-	Compress     bool          // Compress rotated logs
-	Format       string        // json, text
-	RedactFields []string      // Fields to redact
+	OutputPath   string   // Path to log file
+	MaxSizeMB    int      // Max file size before rotation
+	MaxBackups   int      // Number of backup files to keep
+	Compress     bool     // Compress rotated logs
+	Format       string   // json, text
+	RedactFields []string // Fields to redact
 }
 
 // DefaultLoggerConfig returns default configuration
@@ -213,13 +214,18 @@ func (l *Logger) rotationLoop(ctx context.Context) {
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
 
+	tickerCh := ticker.C
+	if l.rotationTicker != nil {
+		tickerCh = l.rotationTicker
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-l.stopCh:
 			return
-		case <-ticker.C:
+		case <-tickerCh:
 			l.checkRotation()
 		}
 	}

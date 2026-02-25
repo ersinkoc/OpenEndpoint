@@ -13,9 +13,9 @@ import (
 type Tier string
 
 const (
-	TierHot    Tier = "hot"    // SSD/NVMe
-	TierWarm   Tier = "warm"   // HDD
-	TierCold   Tier = "cold"   // Object Archive
+	TierHot     Tier = "hot"     // SSD/NVMe
+	TierWarm    Tier = "warm"    // HDD
+	TierCold    Tier = "cold"    // Object Archive
 	TierGlacier Tier = "glacier" // Deep Archive
 )
 
@@ -60,7 +60,7 @@ func DefaultTierConfigs() []TierConfig {
 			Name:           "glacier",
 			Tier:           TierGlacier,
 			MinAge:         180 * 24 * time.Hour, // 180 days
-			MaxSizeGB:      -1, // Unlimited
+			MaxSizeGB:      -1,                   // Unlimited
 			CostPerGBMonth: 0.00099,
 			Priority:       3,
 		},
@@ -81,34 +81,41 @@ type ObjectInfo struct {
 
 // TieringPolicy defines when to move objects between tiers
 type TieringPolicy struct {
-	ID          string     `json:"id"`
-	Name        string     `json:"name"`
-	Bucket      string     `json:"bucket"`
-	Prefix      string     `json:"prefix"`
+	ID          string       `json:"id"`
+	Name        string       `json:"name"`
+	Bucket      string       `json:"bucket"`
+	Prefix      string       `json:"prefix"`
 	TierConfigs []TierConfig `json:"tier_configs"`
-	Enabled     bool       `json:"enabled"`
-	CreatedAt   time.Time  `json:"created_at"`
+	Enabled     bool         `json:"enabled"`
+	CreatedAt   time.Time    `json:"created_at"`
 }
 
 // Manager manages intelligent tiering
 type Manager struct {
-	logger     *zap.Logger
-	mu         sync.RWMutex
-	policies   map[string]*TieringPolicy
-	tierUsage  map[Tier]int64 // Total bytes per tier
-	objectTiers map[string]Tier // object key -> current tier
-	stopCh     chan struct{}
+	logger         *zap.Logger
+	mu             sync.RWMutex
+	policies       map[string]*TieringPolicy
+	tierUsage      map[Tier]int64  // Total bytes per tier
+	objectTiers    map[string]Tier // object key -> current tier
+	stopCh         chan struct{}
+	tickerInterval time.Duration
 }
 
 // NewManager creates a new tiering manager
 func NewManager(logger *zap.Logger) *Manager {
 	return &Manager{
-		logger:     logger,
-		policies:   make(map[string]*TieringPolicy),
-		tierUsage:  make(map[Tier]int64),
-		objectTiers: make(map[string]Tier),
-		stopCh:    make(chan struct{}),
+		logger:         logger,
+		policies:       make(map[string]*TieringPolicy),
+		tierUsage:      make(map[Tier]int64),
+		objectTiers:    make(map[string]Tier),
+		stopCh:         make(chan struct{}),
+		tickerInterval: 1 * time.Hour,
 	}
+}
+
+// SetTickerInterval sets the ticker interval for testing
+func (m *Manager) SetTickerInterval(d time.Duration) {
+	m.tickerInterval = d
 }
 
 // Start starts the tiering manager
@@ -245,7 +252,7 @@ func (m *Manager) GetCostEstimate() (float64, map[Tier]float64) {
 
 // tieringWorker runs periodic tiering
 func (m *Manager) tieringWorker(ctx context.Context) {
-	ticker := time.NewTicker(1 * time.Hour)
+	ticker := time.NewTicker(m.tickerInterval)
 	defer ticker.Stop()
 
 	for {
@@ -314,14 +321,14 @@ func (m *Manager) RecommendTier(obj *ObjectInfo) Tier {
 		return TierWarm
 	}
 
-	// Not accessed recently -> cold
-	if age > 90*24*time.Hour {
-		return TierCold
-	}
-
 	// Very old -> glacier
 	if age > 180*24*time.Hour {
 		return TierGlacier
+	}
+
+	// Not accessed recently -> cold
+	if age > 90*24*time.Hour {
+		return TierCold
 	}
 
 	// Default

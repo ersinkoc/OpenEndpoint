@@ -13,17 +13,18 @@ import (
 // Checker performs health checks
 type Checker struct {
 	checks   map[string]Check
+	checkFns map[string]func() error
 	mu       sync.RWMutex
 	interval time.Duration
 }
 
 // Check represents a health check
 type Check struct {
-	Name     string
-	Status   CheckStatus
-	Message  string
+	Name      string
+	Status    CheckStatus
+	Message   string
 	LastCheck time.Time
-	Duration time.Duration
+	Duration  time.Duration
 }
 
 // CheckStatus represents the status of a check
@@ -32,13 +33,23 @@ type CheckStatus string
 const (
 	StatusHealthy   CheckStatus = "healthy"
 	StatusUnhealthy CheckStatus = "unhealthy"
-	StatusDegraded CheckStatus = "degraded"
+	StatusDegraded  CheckStatus = "degraded"
 )
+
+// DegradedError is an error that signals degraded status
+type DegradedError struct {
+	Message string
+}
+
+func (e *DegradedError) Error() string {
+	return e.Message
+}
 
 // NewChecker creates a new health checker
 func NewChecker(interval time.Duration) *Checker {
 	return &Checker{
 		checks:   make(map[string]Check),
+		checkFns: make(map[string]func() error),
 		interval: interval,
 	}
 }
@@ -51,6 +62,7 @@ func (c *Checker) RegisterCheck(name string, checkFn func() error) {
 	c.checks[name] = Check{
 		Name: name,
 	}
+	c.checkFns[name] = checkFn
 }
 
 // RunChecks runs all registered health checks
@@ -77,13 +89,17 @@ func (c *Checker) runCheck(ctx context.Context, name, checkName string) Check {
 	err := c.executeCheck(ctx, checkName)
 
 	check := Check{
-		Name:     checkName,
-		Duration: time.Since(start),
+		Name:      checkName,
+		Duration:  time.Since(start),
 		LastCheck: time.Now(),
 	}
 
 	if err != nil {
-		check.Status = StatusUnhealthy
+		if _, ok := err.(*DegradedError); ok {
+			check.Status = StatusDegraded
+		} else {
+			check.Status = StatusUnhealthy
+		}
 		check.Message = err.Error()
 	} else {
 		check.Status = StatusHealthy
@@ -100,9 +116,14 @@ func (c *Checker) runCheck(ctx context.Context, name, checkName string) Check {
 
 // executeCheck executes the check function
 func (c *Checker) executeCheck(ctx context.Context, name string) error {
-	// This would be replaced with actual check execution
-	// For now, return nil (healthy)
-	return nil
+	c.mu.RLock()
+	checkFn, exists := c.checkFns[name]
+	c.mu.RUnlock()
+
+	if !exists || checkFn == nil {
+		return nil
+	}
+	return checkFn()
 }
 
 // GetOverallStatus returns the overall health status
@@ -142,7 +163,7 @@ func (c *Checker) HTTPHandler() http.HandlerFunc {
 
 		response := map[string]interface{}{
 			"status": status,
-			"checks":  checks,
+			"checks": checks,
 		}
 
 		if status == StatusHealthy {
@@ -160,7 +181,7 @@ func (c *Checker) HTTPHandler() http.HandlerFunc {
 // ReadyChecker checks if the system is ready to serve requests
 type ReadyChecker struct {
 	checks []func(context.Context) error
-	mu    sync.Mutex
+	mu     sync.Mutex
 }
 
 // NewReadyChecker creates a new readiness checker

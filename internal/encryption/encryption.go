@@ -9,6 +9,10 @@ import (
 	"io"
 )
 
+var newCipher = aes.NewCipher
+var newGCM = cipher.NewGCM
+var randReader = rand.Reader
+
 // KeyManager manages encryption keys
 type KeyManager struct {
 	keys map[string][]byte
@@ -23,8 +27,8 @@ func NewKeyManager() *KeyManager {
 
 // GenerateKey generates a new encryption key
 func (km *KeyManager) GenerateKey(keyID string) ([]byte, error) {
-	key := make([]byte, 32) // AES-256
-	if _, err := rand.Read(key); err != nil {
+	key := make([]byte, 32)
+	if _, err := io.ReadFull(randReader, key); err != nil {
 		return nil, err
 	}
 	km.keys[keyID] = key
@@ -49,34 +53,33 @@ func (km *KeyManager) DeleteKey(keyID string) {
 
 // Encrypt encrypts data using AES-256-GCM
 func Encrypt(key []byte, plaintext []byte) ([]byte, error) {
-	block, err := aes.NewCipher(key)
+	block, err := newCipher(key)
 	if err != nil {
 		return nil, err
 	}
 
-	gcm, err := cipher.NewGCM(block)
+	gcm, err := newGCM(block)
 	if err != nil {
 		return nil, err
 	}
 
 	nonce := make([]byte, gcm.NonceSize())
-	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+	if _, err := io.ReadFull(randReader, nonce); err != nil {
 		return nil, err
 	}
 
-	// Seal encrypts and authenticates plaintext
 	ciphertext := gcm.Seal(nonce, nonce, plaintext, nil)
 	return ciphertext, nil
 }
 
 // Decrypt decrypts data using AES-256-GCM
 func Decrypt(key []byte, ciphertext []byte) ([]byte, error) {
-	block, err := aes.NewCipher(key)
+	block, err := newCipher(key)
 	if err != nil {
 		return nil, err
 	}
 
-	gcm, err := cipher.NewGCM(block)
+	gcm, err := newGCM(block)
 	if err != nil {
 		return nil, err
 	}
@@ -121,8 +124,8 @@ func DecryptString(key []byte, ciphertext string) (string, error) {
 
 // SSEClientSide represents client-side encryption options
 type SSEClientSide struct {
-	Key          []byte
-	KeyID        string
+	Key                 []byte
+	KeyID               string
 	EncryptionAlgorithm string
 }
 

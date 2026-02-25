@@ -16,8 +16,8 @@ import (
 type InputFormat string
 
 const (
-	FormatJSON  InputFormat = "JSON"
-	FormatCSV   InputFormat = "CSV"
+	FormatJSON    InputFormat = "JSON"
+	FormatCSV     InputFormat = "CSV"
 	FormatParquet InputFormat = "Parquet"
 )
 
@@ -25,9 +25,9 @@ const (
 type OutputFormat string
 
 const (
-	OutputJSON  OutputFormat = "JSON"
-	OutputCSV   OutputFormat = "CSV"
-	OutputRaw   OutputFormat = "RAW"
+	OutputJSON OutputFormat = "JSON"
+	OutputCSV  OutputFormat = "CSV"
+	OutputRaw  OutputFormat = "RAW"
 )
 
 // ExpressionType represents the expression type
@@ -45,7 +45,7 @@ type SelectRequest struct {
 	ExpressionType      ExpressionType
 	InputSerialization  InputSerialization
 	OutputSerialization OutputSerialization
-	ScanRange          *ScanRange
+	ScanRange           *ScanRange
 }
 
 // ScanRange represents a range of bytes to scan
@@ -56,9 +56,9 @@ type ScanRange struct {
 
 // InputSerialization contains input serialization settings
 type InputSerialization struct {
-	Format        InputFormat
-	JSON          *JSONInput
-	CSV           *CSVInput
+	Format          InputFormat
+	JSON            *JSONInput
+	CSV             *CSVInput
 	CompressionType string
 }
 
@@ -69,12 +69,12 @@ type JSONInput struct {
 
 // CSVInput contains CSV-specific input settings
 type CSVInput struct {
-	FileHeaderInfo string // Use, Ignore, None
-	RecordDelimiter string
-	FieldDelimiter string
-	QuoteCharacter string
+	FileHeaderInfo       string // Use, Ignore, None
+	RecordDelimiter      string
+	FieldDelimiter       string
+	QuoteCharacter       string
 	QuoteEscapeCharacter string
-	CommentCharacter string
+	CommentCharacter     string
 }
 
 // OutputSerialization contains output serialization settings
@@ -91,9 +91,9 @@ type JSONOutput struct {
 
 // CSVOutput contains CSV-specific output settings
 type CSVOutput struct {
-	RecordDelimiter string
-	FieldDelimiter string
-	QuoteCharacter string
+	RecordDelimiter      string
+	FieldDelimiter       string
+	QuoteCharacter       string
 	QuoteEscapeCharacter string
 }
 
@@ -107,8 +107,8 @@ type SelectResult struct {
 // SelectStats contains select statistics
 type SelectStats struct {
 	BytesScanned    int64
-	BytesProcessed int64
-	BytesReturned  int64
+	BytesProcessed  int64
+	BytesReturned   int64
 	RecordsReturned int64
 }
 
@@ -192,20 +192,21 @@ type AST struct {
 
 // Evaluator evaluates the AST against records
 type Evaluator struct {
-	ast    *AST
-	input  InputFormat
-	logger *zap.Logger
-	stats  SelectStats
-	mu     sync.Mutex
+	ast            *AST
+	input          InputFormat
+	logger         *zap.Logger
+	stats          SelectStats
+	mu             sync.Mutex
+	forceFormatErr bool
 }
 
 // NewEvaluator creates a new evaluator
 func NewEvaluator(ast *AST, input InputFormat, logger *zap.Logger) *Evaluator {
 	return &Evaluator{
-		ast:   ast,
-		input: input,
+		ast:    ast,
+		input:  input,
 		logger: logger,
-		stats: SelectStats{},
+		stats:  SelectStats{},
 	}
 }
 
@@ -224,7 +225,7 @@ func (e *Evaluator) Evaluate(ctx context.Context, inputData io.Reader) (*SelectR
 					break
 				}
 				e.logger.Debug("Error decoding JSON", zap.Error(err))
-				continue
+				break
 			}
 
 			e.stats.BytesProcessed += estimateRecordSize(record)
@@ -325,6 +326,9 @@ func (e *Evaluator) selectColumns(record map[string]interface{}) string {
 
 // formatOutput formats the output
 func (e *Evaluator) formatOutput(records []string) ([]byte, error) {
+	if e.forceFormatErr {
+		return nil, fmt.Errorf("forced format error")
+	}
 	switch e.input {
 	case FormatJSON:
 		return json.Marshal(records)

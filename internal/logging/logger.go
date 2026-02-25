@@ -9,6 +9,14 @@ import (
 	"time"
 )
 
+var (
+	osRename   = os.Rename
+	osOpenFile = os.OpenFile
+	fileStat   = defaultFileStat
+)
+
+func defaultFileStat(f *os.File) (os.FileInfo, error) { return f.Stat() }
+
 // Level represents log level
 type Level int
 
@@ -183,7 +191,7 @@ func (l *Logger) Rotate() error {
 	}
 
 	// Get current file info
-	info, err := file.Stat()
+	info, err := fileStat(file)
 	if err != nil {
 		return err
 	}
@@ -196,12 +204,11 @@ func (l *Logger) Rotate() error {
 
 	newName := filepath.Join(dir, fmt.Sprintf("%s-%s%s", name, time.Now().Format("20060102-150405"), ext))
 
-	if err := os.Rename(info.Name(), newName); err != nil {
+	if err := osRename(info.Name(), newName); err != nil {
 		return err
 	}
 
-	// Open new file
-	newFile, err := os.OpenFile(info.Name(), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	newFile, err := osOpenFile(info.Name(), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		return err
 	}

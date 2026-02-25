@@ -110,11 +110,13 @@ func (m *Manager) load() {
 		return
 	}
 
-	if err := json.Unmarshal(data, &m.settings); err != nil {
+	var newSettings map[string]interface{}
+	if err := json.Unmarshal(data, &newSettings); err != nil {
 		// Use defaults if parsing fails
 		m.settings = m.defaults()
 		return
 	}
+	m.settings = newSettings
 }
 
 // defaults returns default settings

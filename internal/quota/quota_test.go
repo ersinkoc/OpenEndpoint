@@ -1,207 +1,432 @@
 package quota
 
 import (
+	"context"
 	"testing"
+	"time"
 )
 
-func TestNewManager(t *testing.T) {
-	mgr := NewManager()
-	if mgr == nil {
-		t.Fatal("Manager should not be nil")
+func TestQuotaTypes(t *testing.T) {
+	if QuotaTypeStorage != "storage" {
+		t.Errorf("QuotaTypeStorage = %v, want storage", QuotaTypeStorage)
+	}
+	if QuotaTypeObjects != "objects" {
+		t.Errorf("QuotaTypeObjects = %v, want objects", QuotaTypeObjects)
+	}
+	if QuotaTypeBandwidth != "bandwidth" {
+		t.Errorf("QuotaTypeBandwidth = %v, want bandwidth", QuotaTypeBandwidth)
 	}
 }
 
-func TestManager_SetQuota(t *testing.T) {
-	mgr := NewManager()
+func TestSetAndGetQuota(t *testing.T) {
+	mgr := NewQuotaManager()
 
-	quota := &Quota{
-		MaxSize:   1024 * 1024 * 1024, // 1GB
-		MaxObjects: 1000,
-	}
-
-	err := mgr.SetQuota("test-bucket", quota)
+	err := mgr.SetQuota("bucket1", QuotaTypeStorage, 1000, 0.8, true)
 	if err != nil {
 		t.Fatalf("SetQuota failed: %v", err)
 	}
+
+	quota, ok := mgr.GetQuota("bucket1")
+	if !ok {
+		t.Fatal("GetQuota should return ok=true")
+	}
+	if quota.Bucket != "bucket1" {
+		t.Errorf("Bucket = %v, want bucket1", quota.Bucket)
+	}
+	if quota.Type != QuotaTypeStorage {
+		t.Errorf("Type = %v, want storage", quota.Type)
+	}
+	if quota.Limit != 1000 {
+		t.Errorf("Limit = %v, want 1000", quota.Limit)
+	}
+	if quota.WarningThreshold != 0.8 {
+		t.Errorf("WarningThreshold = %v, want 0.8", quota.WarningThreshold)
+	}
+	if !quota.Enforce {
+		t.Error("Enforce should be true")
+	}
 }
 
-func TestManager_GetQuota(t *testing.T) {
-	mgr := NewManager()
+func TestGetQuotaNotFound(t *testing.T) {
+	mgr := NewQuotaManager()
 
-	quota := &Quota{
-		MaxSize:    1024 * 1024,
-		MaxObjects: 100,
+	_, ok := mgr.GetQuota("nonexistent")
+	if ok {
+		t.Error("GetQuota should return ok=false for nonexistent bucket")
 	}
-	mgr.SetQuota("test-bucket", quota)
+}
 
-	result, err := mgr.GetQuota("test-bucket")
+func TestDeleteQuota(t *testing.T) {
+	mgr := NewQuotaManager()
+
+	mgr.SetQuota("bucket1", QuotaTypeStorage, 1000, 0.8, true)
+	mgr.DeleteQuota("bucket1")
+
+	_, ok := mgr.GetQuota("bucket1")
+	if ok {
+		t.Error("GetQuota should return ok=false after DeleteQuota")
+	}
+}
+
+func TestCheckQuotaNoQuotaSet(t *testing.T) {
+	mgr := NewQuotaManager()
+
+	ok, status, err := mgr.CheckQuota(context.Background(), "bucket1", QuotaTypeStorage, 100)
+	if !ok {
+		t.Error("CheckQuota should return true when no quota set")
+	}
+	if status != "" {
+		t.Errorf("status = %v, want empty", status)
+	}
 	if err != nil {
-		t.Fatalf("GetQuota failed: %v", err)
-	}
-
-	if result.MaxSize != 1024*1024 {
-		t.Errorf("MaxSize = %d, want %d", result.MaxSize, 1024*1024)
+		t.Errorf("err = %v, want nil", err)
 	}
 }
 
-func TestManager_GetQuota_NotFound(t *testing.T) {
-	mgr := NewManager()
+func TestCheckQuotaDifferentType(t *testing.T) {
+	mgr := NewQuotaManager()
+	mgr.SetQuota("bucket1", QuotaTypeStorage, 1000, 0.8, true)
 
-	_, err := mgr.GetQuota("non-existent")
-	if err == nil {
-		t.Error("GetQuota should fail for non-existent bucket")
+	ok, status, _ := mgr.CheckQuota(context.Background(), "bucket1", QuotaTypeObjects, 100)
+	if !ok {
+		t.Error("CheckQuota should return true for different quota type")
+	}
+	if status != "" {
+		t.Errorf("status = %v, want empty", status)
 	}
 }
 
-func TestManager_DeleteQuota(t *testing.T) {
-	mgr := NewManager()
+func TestCheckQuotaWithinLimit(t *testing.T) {
+	mgr := NewQuotaManager()
+	mgr.SetQuota("bucket1", QuotaTypeStorage, 1000, 0.8, true)
 
-	quota := &Quota{MaxSize: 1024}
-	mgr.SetQuota("test-bucket", quota)
-
-	err := mgr.DeleteQuota("test-bucket")
+	ok, status, err := mgr.CheckQuota(context.Background(), "bucket1", QuotaTypeStorage, 500)
+	if !ok {
+		t.Error("CheckQuota should return true when within limit")
+	}
+	if status != "" {
+		t.Errorf("status = %v, want empty", status)
+	}
 	if err != nil {
-		t.Fatalf("DeleteQuota failed: %v", err)
+		t.Errorf("err = %v, want nil", err)
 	}
+}
 
-	_, err = mgr.GetQuota("test-bucket")
+func TestCheckQuotaExceedsLimit(t *testing.T) {
+	mgr := NewQuotaManager()
+	mgr.SetQuota("bucket1", QuotaTypeStorage, 1000, 0.8, true)
+
+	ok, status, err := mgr.CheckQuota(context.Background(), "bucket1", QuotaTypeStorage, 1500)
+	if ok {
+		t.Error("CheckQuota should return false when exceeds limit")
+	}
+	if status != "QuotaExceeded" {
+		t.Errorf("status = %v, want QuotaExceeded", status)
+	}
 	if err == nil {
-		t.Error("Quota should be deleted")
+		t.Error("err should not be nil when quota exceeded")
 	}
 }
 
-func TestManager_CheckQuota(t *testing.T) {
-	mgr := NewManager()
+func TestCheckQuotaWarningThreshold(t *testing.T) {
+	mgr := NewQuotaManager()
+	mgr.SetQuota("bucket1", QuotaTypeStorage, 1000, 0.5, true)
 
-	quota := &Quota{
-		MaxSize:    1000,
-		MaxObjects: 10,
+	ok, status, err := mgr.CheckQuota(context.Background(), "bucket1", QuotaTypeStorage, 600)
+	if !ok {
+		t.Error("CheckQuota should return true when within limit but above threshold")
 	}
-	mgr.SetQuota("test-bucket", quota)
-
-	tests := []struct {
-		name       string
-		size       int64
-		objects    int
-		shouldPass bool
-	}{
-		{"within limits", 500, 5, true},
-		{"at size limit", 1000, 5, true},
-		{"over size limit", 1001, 5, false},
-		{"at object limit", 500, 10, true},
-		{"over object limit", 500, 11, false},
+	if status != "QuotaWarning" {
+		t.Errorf("status = %v, want QuotaWarning", status)
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := mgr.CheckQuota("test-bucket", tt.size, tt.objects)
-			if (err == nil) != tt.shouldPass {
-				t.Errorf("CheckQuota() pass = %v, want %v", err == nil, tt.shouldPass)
-			}
-		})
+	if err != nil {
+		t.Errorf("err = %v, want nil", err)
 	}
 }
 
-func TestManager_UpdateUsage(t *testing.T) {
-	mgr := NewManager()
+func TestCheckQuotaNoEnforce(t *testing.T) {
+	mgr := NewQuotaManager()
+	mgr.SetQuota("bucket1", QuotaTypeStorage, 1000, 0.8, false)
 
-	err := mgr.UpdateUsage("test-bucket", 1024, 5)
+	ok, status, _ := mgr.CheckQuota(context.Background(), "bucket1", QuotaTypeStorage, 1500)
+	if !ok {
+		t.Error("CheckQuota should return true when not enforced")
+	}
+	if status != "QuotaWarning" {
+		t.Errorf("status = %v, want QuotaWarning", status)
+	}
+}
+
+func TestCheckQuotaNoEnforceNoWarningThreshold(t *testing.T) {
+	mgr := NewQuotaManager()
+	mgr.SetQuota("bucket1", QuotaTypeStorage, 1000, 0, false)
+
+	ok, status, _ := mgr.CheckQuota(context.Background(), "bucket1", QuotaTypeStorage, 1500)
+	if !ok {
+		t.Error("CheckQuota should return true when not enforced")
+	}
+	if status != "" {
+		t.Errorf("status = %v, want empty", status)
+	}
+}
+
+func TestUpdateUsage(t *testing.T) {
+	mgr := NewQuotaManager()
+	mgr.SetQuota("bucket1", QuotaTypeStorage, 1000, 0.8, true)
+
+	err := mgr.UpdateUsage("bucket1", QuotaTypeStorage, 100)
 	if err != nil {
 		t.Fatalf("UpdateUsage failed: %v", err)
 	}
+
+	quota, _ := mgr.GetQuota("bucket1")
+	if quota.Used != 100 {
+		t.Errorf("Used = %v, want 100", quota.Used)
+	}
 }
 
-func TestManager_GetUsage(t *testing.T) {
-	mgr := NewManager()
+func TestUpdateUsageNoQuota(t *testing.T) {
+	mgr := NewQuotaManager()
 
-	mgr.UpdateUsage("test-bucket", 2048, 10)
-
-	usage, err := mgr.GetUsage("test-bucket")
+	err := mgr.UpdateUsage("bucket1", QuotaTypeStorage, 100)
 	if err != nil {
-		t.Fatalf("GetUsage failed: %v", err)
-	}
-
-	if usage.Size != 2048 {
-		t.Errorf("Size = %d, want 2048", usage.Size)
-	}
-
-	if usage.Objects != 10 {
-		t.Errorf("Objects = %d, want 10", usage.Objects)
+		t.Errorf("UpdateUsage should return nil when no quota set")
 	}
 }
 
-func TestManager_ResetUsage(t *testing.T) {
-	mgr := NewManager()
+func TestUpdateUsageDifferentType(t *testing.T) {
+	mgr := NewQuotaManager()
+	mgr.SetQuota("bucket1", QuotaTypeStorage, 1000, 0.8, true)
 
-	mgr.UpdateUsage("test-bucket", 1024, 5)
+	err := mgr.UpdateUsage("bucket1", QuotaTypeObjects, 100)
+	if err != nil {
+		t.Fatalf("UpdateUsage failed: %v", err)
+	}
 
-	err := mgr.ResetUsage("test-bucket")
+	quota, _ := mgr.GetQuota("bucket1")
+	if quota.Used != 0 {
+		t.Errorf("Used = %v, want 0 (different type)", quota.Used)
+	}
+}
+
+func TestResetUsage(t *testing.T) {
+	mgr := NewQuotaManager()
+	mgr.SetQuota("bucket1", QuotaTypeStorage, 1000, 0.8, true)
+	mgr.UpdateUsage("bucket1", QuotaTypeStorage, 100)
+
+	err := mgr.ResetUsage("bucket1")
 	if err != nil {
 		t.Fatalf("ResetUsage failed: %v", err)
 	}
 
-	usage, _ := mgr.GetUsage("test-bucket")
-	if usage.Size != 0 || usage.Objects != 0 {
-		t.Error("Usage should be reset to 0")
+	quota, _ := mgr.GetQuota("bucket1")
+	if quota.Used != 0 {
+		t.Errorf("Used = %v, want 0 after reset", quota.Used)
 	}
 }
 
-func TestManager_ListQuotas(t *testing.T) {
-	mgr := NewManager()
+func TestResetUsageNoQuota(t *testing.T) {
+	mgr := NewQuotaManager()
 
-	// Empty list
+	err := mgr.ResetUsage("bucket1")
+	if err != nil {
+		t.Errorf("ResetUsage should return nil when no quota set")
+	}
+}
+
+func TestSetBandwidthLimit(t *testing.T) {
+	mgr := NewQuotaManager()
+	mgr.SetBandwidthLimit("bucket1", 10000)
+
+	if mgr.bandwidth["bucket1"] == nil {
+		t.Error("bandwidth tracker should be set")
+	}
+	if mgr.bandwidth["bucket1"].limit != 10000 {
+		t.Errorf("limit = %v, want 10000", mgr.bandwidth["bucket1"].limit)
+	}
+}
+
+func TestCheckBandwidthNoLimit(t *testing.T) {
+	mgr := NewQuotaManager()
+
+	ok, err := mgr.CheckBandwidth("bucket1", 1000, 1000)
+	if !ok {
+		t.Error("CheckBandwidth should return true when no limit set")
+	}
+	if err != nil {
+		t.Errorf("err = %v, want nil", err)
+	}
+}
+
+func TestCheckBandwidthWithinLimit(t *testing.T) {
+	mgr := NewQuotaManager()
+	mgr.SetBandwidthLimit("bucket1", 10000)
+
+	ok, err := mgr.CheckBandwidth("bucket1", 1000, 1000)
+	if !ok {
+		t.Error("CheckBandwidth should return true when within limit")
+	}
+	if err != nil {
+		t.Errorf("err = %v, want nil", err)
+	}
+}
+
+func TestCheckBandwidthExceedsLimit(t *testing.T) {
+	mgr := NewQuotaManager()
+	mgr.SetBandwidthLimit("bucket1", 1000)
+
+	ok, err := mgr.CheckBandwidth("bucket1", 500, 1500)
+	if ok {
+		t.Error("CheckBandwidth should return false when write exceeds limit")
+	}
+	if err == nil {
+		t.Error("err should not be nil when bandwidth exceeded")
+	}
+
+	ok, err = mgr.CheckBandwidth("bucket1", 1500, 500)
+	if ok {
+		t.Error("CheckBandwidth should return false when read exceeds limit")
+	}
+}
+
+func TestCheckBandwidthReset(t *testing.T) {
+	mgr := NewQuotaManager()
+	mgr.SetBandwidthLimit("bucket1", 10000)
+
+	mgr.CheckBandwidth("bucket1", 1000, 1000)
+
+	tracker := mgr.bandwidth["bucket1"]
+	tracker.lastReset = time.Now().Add(-2 * time.Second)
+
+	ok, err := mgr.CheckBandwidth("bucket1", 1000, 1000)
+	if !ok {
+		t.Error("CheckBandwidth should return true after reset")
+	}
+	if err != nil {
+		t.Errorf("err = %v, want nil", err)
+	}
+}
+
+func TestGetUsage(t *testing.T) {
+	mgr := NewQuotaManager()
+	mgr.SetQuota("bucket1", QuotaTypeStorage, 1000, 0.8, true)
+	mgr.UpdateUsage("bucket1", QuotaTypeStorage, 500)
+
+	usage, err := mgr.GetUsage("bucket1")
+	if err != nil {
+		t.Fatalf("GetUsage failed: %v", err)
+	}
+
+	if usage["bucket"] != "bucket1" {
+		t.Errorf("bucket = %v, want bucket1", usage["bucket"])
+	}
+	if usage["type"] != QuotaTypeStorage {
+		t.Errorf("type = %v, want storage", usage["type"])
+	}
+	if usage["limit"] != int64(1000) {
+		t.Errorf("limit = %v, want 1000", usage["limit"])
+	}
+	if usage["used"] != int64(500) {
+		t.Errorf("used = %v, want 500", usage["used"])
+	}
+	if usage["available"] != int64(500) {
+		t.Errorf("available = %v, want 500", usage["available"])
+	}
+	if usage["usage_percent"] != 50.0 {
+		t.Errorf("usage_percent = %v, want 50.0", usage["usage_percent"])
+	}
+}
+
+func TestGetUsageNoQuota(t *testing.T) {
+	mgr := NewQuotaManager()
+
+	_, err := mgr.GetUsage("bucket1")
+	if err == nil {
+		t.Error("GetUsage should return error when no quota set")
+	}
+}
+
+func TestListQuotas(t *testing.T) {
+	mgr := NewQuotaManager()
+	mgr.SetQuota("bucket1", QuotaTypeStorage, 1000, 0.8, true)
+	mgr.SetQuota("bucket2", QuotaTypeStorage, 2000, 0.9, false)
+
+	quotas := mgr.ListQuotas()
+	if len(quotas) != 2 {
+		t.Errorf("len(quotas) = %v, want 2", len(quotas))
+	}
+}
+
+func TestListQuotasEmpty(t *testing.T) {
+	mgr := NewQuotaManager()
+
 	quotas := mgr.ListQuotas()
 	if len(quotas) != 0 {
-		t.Errorf("Empty list should have 0 quotas, got %d", len(quotas))
-	}
-
-	// Add quotas
-	mgr.SetQuota("bucket1", &Quota{MaxSize: 1000})
-	mgr.SetQuota("bucket2", &Quota{MaxSize: 2000})
-
-	quotas = mgr.ListQuotas()
-	if len(quotas) != 2 {
-		t.Errorf("List should have 2 quotas, got %d", len(quotas))
+		t.Errorf("len(quotas) = %v, want 0", len(quotas))
 	}
 }
 
-func TestQuota_Validate(t *testing.T) {
-	tests := []struct {
-		name    string
-		quota   *Quota
-		wantErr bool
-	}{
-		{"valid quota", &Quota{MaxSize: 1000, MaxObjects: 100}, false},
-		{"zero limits", &Quota{MaxSize: 0, MaxObjects: 0}, false}, // 0 means unlimited
-		{"negative size", &Quota{MaxSize: -1, MaxObjects: 100}, true},
-		{"negative objects", &Quota{MaxSize: 1000, MaxObjects: -1}, true},
+func TestComplianceCheckerCheckCompliance(t *testing.T) {
+	mgr := NewQuotaManager()
+	checker := NewComplianceChecker(mgr)
+
+	result, err := checker.CheckCompliance("bucket1")
+	if err != nil {
+		t.Fatalf("CheckCompliance failed: %v", err)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := tt.quota.Validate()
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
+	if result["has_quota"] {
+		t.Error("has_quota should be false for bucket without quota")
 	}
 }
 
-func TestManager_Concurrent(t *testing.T) {
-	mgr := NewManager()
-	done := make(chan bool)
+func TestComplianceCheckerWithQuota(t *testing.T) {
+	mgr := NewQuotaManager()
+	mgr.SetQuota("bucket1", QuotaTypeStorage, 1000, 0.8, true)
 
-	for i := 0; i < 10; i++ {
-		go func(id int) {
-			bucket := string(rune('A' + id))
-			mgr.SetQuota(bucket, &Quota{MaxSize: int64(id)})
-			mgr.GetQuota(bucket)
-			mgr.UpdateUsage(bucket, int64(id), id)
-			done <- true
-		}(i)
+	checker := NewComplianceChecker(mgr)
+	result, err := checker.CheckCompliance("bucket1")
+	if err != nil {
+		t.Fatalf("CheckCompliance failed: %v", err)
 	}
 
-	for i := 0; i < 10; i++ {
-		<-done
+	if !result["has_quota"] {
+		t.Error("has_quota should be true")
+	}
+	if !result["within_quota"] {
+		t.Error("within_quota should be true")
+	}
+	if !result["has_warning_threshold"] {
+		t.Error("has_warning_threshold should be true")
+	}
+	if !result["enforced"] {
+		t.Error("enforced should be true")
+	}
+}
+
+func TestComplianceCheckerWithBandwidth(t *testing.T) {
+	mgr := NewQuotaManager()
+	mgr.SetBandwidthLimit("bucket1", 10000)
+
+	checker := NewComplianceChecker(mgr)
+	result, err := checker.CheckCompliance("bucket1")
+	if err != nil {
+		t.Fatalf("CheckCompliance failed: %v", err)
+	}
+
+	if !result["has_bandwidth_limit"] {
+		t.Error("has_bandwidth_limit should be true")
+	}
+}
+
+func TestQuotaLastUpdated(t *testing.T) {
+	mgr := NewQuotaManager()
+	before := time.Now()
+	mgr.SetQuota("bucket1", QuotaTypeStorage, 1000, 0.8, true)
+	after := time.Now()
+
+	quota, _ := mgr.GetQuota("bucket1")
+	if quota.LastUpdated.Before(before) || quota.LastUpdated.After(after) {
+		t.Error("LastUpdated should be set to current time")
 	}
 }

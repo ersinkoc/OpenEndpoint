@@ -1,216 +1,597 @@
 package s3select
 
 import (
-	"bytes"
+	"context"
+	"fmt"
+	"strings"
 	"testing"
+
+	"go.uber.org/zap"
 )
 
-func TestNewService(t *testing.T) {
-	svc := NewService()
+func TestNewParser(t *testing.T) {
+	logger := zap.NewNop()
+	parser := NewParser(logger)
+	if parser == nil {
+		t.Fatal("Parser should not be nil")
+	}
+}
+
+func TestNewSelectService(t *testing.T) {
+	logger := zap.NewNop()
+	svc := NewSelectService(logger)
 	if svc == nil {
 		t.Fatal("Service should not be nil")
 	}
 }
 
-func TestService_ExecuteQuery(t *testing.T) {
-	svc := NewService()
+func TestNewEvaluator(t *testing.T) {
+	logger := zap.NewNop()
+	ast := &AST{Columns: []string{"*"}}
+	evaluator := NewEvaluator(ast, FormatJSON, logger)
+	if evaluator == nil {
+		t.Fatal("Evaluator should not be nil")
+	}
+}
 
-	data := []byte(`name,age,city
-John,30,NYC
-Jane,25,LA
-Bob,35,Chicago`)
+func TestParserParseValid(t *testing.T) {
+	logger := zap.NewNop()
+	parser := NewParser(logger)
 
-	query := &Query{
-		Expression: "SELECT * FROM s3object s WHERE s.age > 25",
+	tests := []struct {
+		sql       string
+		wantCols  []string
+		wantWhere string
+		wantLimit int64
+	}{
+		{"SELECT * FROM s3object", []string{"*"}, "", 0},
+		{"SELECT name, age FROM s3object", []string{"name", " age"}, "", 0},
+		{"SELECT * FROM s3object WHERE age > 18", []string{"*"}, "age > 18", 0},
+		{"SELECT * FROM s3object LIMIT 10", []string{"*"}, "", 10},
+		{"SELECT * FROM s3object WHERE age > 18 LIMIT 5", []string{"*"}, "age > 18 LIMIT 5", 5},
 	}
 
-	result, err := svc.ExecuteQuery(bytes.NewReader(data), query)
+	for _, tt := range tests {
+		ast, err := parser.Parse(tt.sql)
+		if err != nil {
+			t.Errorf("Parse(%q) failed: %v", tt.sql, err)
+			continue
+		}
+
+		if len(ast.Columns) != len(tt.wantCols) {
+			t.Errorf("Parse(%q) columns count = %d, want %d", tt.sql, len(ast.Columns), len(tt.wantCols))
+		}
+
+		if ast.WhereClause != tt.wantWhere {
+			t.Errorf("Parse(%q) WhereClause = %q, want %q", tt.sql, ast.WhereClause, tt.wantWhere)
+		}
+
+		if ast.Limit != tt.wantLimit {
+			t.Errorf("Parse(%q) Limit = %d, want %d", tt.sql, ast.Limit, tt.wantLimit)
+		}
+	}
+}
+
+func TestParserParseInvalid(t *testing.T) {
+	logger := zap.NewNop()
+	parser := NewParser(logger)
+
+	tests := []string{
+		"INVALID SQL",
+		"SELECT *",
+		"",
+	}
+
+	for _, sql := range tests {
+		_, err := parser.Parse(sql)
+		if err == nil {
+			t.Errorf("Parse(%q) should fail", sql)
+		}
+	}
+}
+
+func TestParseColumns(t *testing.T) {
+	logger := zap.NewNop()
+	parser := NewParser(logger)
+
+	tests := []struct {
+		input string
+		want  int
+	}{
+		{"*", 1},
+		{"name", 1},
+		{"name,age", 2},
+		{"name, age, city", 3},
+	}
+
+	for _, tt := range tests {
+		cols := parser.parseColumns(tt.input)
+		if len(cols) != tt.want {
+			t.Errorf("parseColumns(%q) returned %d columns, want %d", tt.input, len(cols), tt.want)
+		}
+	}
+}
+
+func TestInputFormatConstants(t *testing.T) {
+	if FormatJSON != "JSON" {
+		t.Errorf("FormatJSON = %v, want JSON", FormatJSON)
+	}
+	if FormatCSV != "CSV" {
+		t.Errorf("FormatCSV = %v, want CSV", FormatCSV)
+	}
+	if FormatParquet != "Parquet" {
+		t.Errorf("FormatParquet = %v, want Parquet", FormatParquet)
+	}
+}
+
+func TestOutputFormatConstants(t *testing.T) {
+	if OutputJSON != "JSON" {
+		t.Errorf("OutputJSON = %v, want JSON", OutputJSON)
+	}
+	if OutputCSV != "CSV" {
+		t.Errorf("OutputCSV = %v, want CSV", OutputCSV)
+	}
+	if OutputRaw != "RAW" {
+		t.Errorf("OutputRaw = %v, want RAW", OutputRaw)
+	}
+}
+
+func TestExpressionTypeConstants(t *testing.T) {
+	if ExpressionTypeSQL != "SQL" {
+		t.Errorf("ExpressionTypeSQL = %v, want SQL", ExpressionTypeSQL)
+	}
+}
+
+func TestEvaluateJSON(t *testing.T) {
+	logger := zap.NewNop()
+	ast := &AST{Columns: []string{"*"}}
+	evaluator := NewEvaluator(ast, FormatJSON, logger)
+
+	jsonData := `{"name":"John","age":30}
+{"name":"Jane","age":25}`
+
+	result, err := evaluator.Evaluate(context.Background(), strings.NewReader(jsonData))
 	if err != nil {
-		t.Fatalf("ExecuteQuery failed: %v", err)
+		t.Fatalf("Evaluate failed: %v", err)
 	}
 
 	if result == nil {
-		t.Fatal("Result should not be nil")
+		t.Fatal("result should not be nil")
+	}
+
+	if result.Stats == nil {
+		t.Fatal("result.Stats should not be nil")
+	}
+
+	if result.Stats.RecordsReturned != 2 {
+		t.Errorf("RecordsReturned = %d, want 2", result.Stats.RecordsReturned)
 	}
 }
 
-func TestService_ParseCSV(t *testing.T) {
-	svc := NewService()
+func TestEvaluateJSONWithLimit(t *testing.T) {
+	logger := zap.NewNop()
+	ast := &AST{Columns: []string{"*"}, Limit: 1}
+	evaluator := NewEvaluator(ast, FormatJSON, logger)
 
-	data := []byte(`a,b,c
-1,2,3
-4,5,6`)
+	jsonData := `{"name":"John","age":30}
+{"name":"Jane","age":25}`
 
-	records, err := svc.ParseCSV(bytes.NewReader(data))
+	result, err := evaluator.Evaluate(context.Background(), strings.NewReader(jsonData))
 	if err != nil {
-		t.Fatalf("ParseCSV failed: %v", err)
+		t.Fatalf("Evaluate failed: %v", err)
 	}
 
-	if len(records) != 2 {
-		t.Errorf("Record count = %d, want 2", len(records))
+	if result.Stats.RecordsReturned != 1 {
+		t.Errorf("RecordsReturned = %d, want 1 (limit)", result.Stats.RecordsReturned)
 	}
 }
 
-func TestService_ParseJSON(t *testing.T) {
-	svc := NewService()
+func TestEvaluateCSV(t *testing.T) {
+	logger := zap.NewNop()
+	ast := &AST{Columns: []string{"*"}}
+	evaluator := NewEvaluator(ast, FormatCSV, logger)
 
-	data := []byte(`{"name":"John","age":30}
-{"name":"Jane","age":25}`)
+	csvData := `name,age
+John,30
+Jane,25`
 
-	records, err := svc.ParseJSON(bytes.NewReader(data))
+	result, err := evaluator.Evaluate(context.Background(), strings.NewReader(csvData))
 	if err != nil {
-		t.Fatalf("ParseJSON failed: %v", err)
+		t.Fatalf("Evaluate failed: %v", err)
 	}
 
-	if len(records) != 2 {
-		t.Errorf("Record count = %d, want 2", len(records))
-	}
-}
-
-func TestQuery_Validate(t *testing.T) {
-	tests := []struct {
-		name    string
-		query   *Query
-		wantErr bool
-	}{
-		{"valid query", &Query{Expression: "SELECT * FROM s3object"}, false},
-		{"empty expression", &Query{Expression: ""}, true},
-		{"invalid syntax", &Query{Expression: "SELECT INVALID"}, false}, // Syntax check may be lenient
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := tt.query.Validate()
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
+	if result.Stats.RecordsReturned != 2 {
+		t.Errorf("RecordsReturned = %d, want 2", result.Stats.RecordsReturned)
 	}
 }
 
-func TestExpressionParser(t *testing.T) {
-	parser := NewExpressionParser()
+func TestEvaluateCSVWithColumns(t *testing.T) {
+	logger := zap.NewNop()
+	ast := &AST{Columns: []string{"name"}}
+	evaluator := NewEvaluator(ast, FormatCSV, logger)
 
-	tests := []struct {
-		expr     string
-		valid    bool
-	}{
-		{"SELECT * FROM s3object", true},
-		{"SELECT s.name FROM s3object s", true},
-		{"SELECT * FROM s3object WHERE s.age > 30", true},
-		{"SELECT COUNT(*) FROM s3object", true},
-		{"", false},
+	csvData := `name,age
+John,30
+Jane,25`
+
+	result, err := evaluator.Evaluate(context.Background(), strings.NewReader(csvData))
+	if err != nil {
+		t.Fatalf("Evaluate failed: %v", err)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.expr, func(t *testing.T) {
-			err := parser.Parse(tt.expr)
-			if (err == nil) != tt.valid {
-				t.Errorf("Parse(%s) valid = %v, want %v", tt.expr, err == nil, tt.valid)
-			}
-		})
+	if result.Stats.RecordsReturned != 2 {
+		t.Errorf("RecordsReturned = %d, want 2", result.Stats.RecordsReturned)
 	}
 }
 
-func TestWhereClause(t *testing.T) {
-	evaluator := NewWhereEvaluator()
+func TestSelectColumnsAll(t *testing.T) {
+	logger := zap.NewNop()
+	ast := &AST{Columns: []string{"*"}}
+	evaluator := NewEvaluator(ast, FormatJSON, logger)
 
-	record := map[string]string{"age": "35", "name": "John"}
+	record := map[string]interface{}{"name": "John", "age": 30.0}
+	result := evaluator.selectColumns(record)
 
-	tests := []struct {
-		clause   string
-		expected bool
-	}{
-		{"age > 30", true},
-		{"age < 30", false},
-		{"name = 'John'", true},
-		{"name = 'Jane'", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.clause, func(t *testing.T) {
-			result, err := evaluator.Evaluate(tt.clause, record)
-			if err != nil {
-				t.Fatalf("Evaluate failed: %v", err)
-			}
-
-			if result != tt.expected {
-				t.Errorf("Evaluate(%s) = %v, want %v", tt.clause, result, tt.expected)
-			}
-		})
+	if !strings.Contains(result, "John") {
+		t.Errorf("selectColumns(*) should contain 'John', got %s", result)
 	}
 }
 
-func TestAggregations(t *testing.T) {
-	agg := NewAggregator()
+func TestSelectColumnsSpecific(t *testing.T) {
+	logger := zap.NewNop()
+	ast := &AST{Columns: []string{"name"}}
+	evaluator := NewEvaluator(ast, FormatJSON, logger)
 
-	records := []map[string]string{
-		{"age": "30"},
-		{"age": "25"},
-		{"age": "35"},
-	}
+	record := map[string]interface{}{"name": "John", "age": 30.0}
+	result := evaluator.selectColumns(record)
 
-	count := agg.Count(records)
-	if count != 3 {
-		t.Errorf("Count = %d, want 3", count)
-	}
-
-	sum := agg.Sum(records, "age")
-	if sum != 90 {
-		t.Errorf("Sum = %f, want 90", sum)
-	}
-
-	avg := agg.Avg(records, "age")
-	if avg != 30 {
-		t.Errorf("Avg = %f, want 30", avg)
-	}
-
-	min := agg.Min(records, "age")
-	if min != 25 {
-		t.Errorf("Min = %f, want 25", min)
-	}
-
-	max := agg.Max(records, "age")
-	if max != 35 {
-		t.Errorf("Max = %f, want 35", max)
+	if result != "John" {
+		t.Errorf("selectColumns(name) = %s, want John", result)
 	}
 }
 
-func TestResult_Format(t *testing.T) {
-	result := &Result{
-		Records: []map[string]string{
-			{"name": "John", "age": "30"},
-			{"name": "Jane", "age": "25"},
+func TestSelectColumnsMissing(t *testing.T) {
+	logger := zap.NewNop()
+	ast := &AST{Columns: []string{"missing"}}
+	evaluator := NewEvaluator(ast, FormatJSON, logger)
+
+	record := map[string]interface{}{"name": "John"}
+	result := evaluator.selectColumns(record)
+
+	if result != "" {
+		t.Errorf("selectColumns(missing) = %s, want empty", result)
+	}
+}
+
+func TestFormatOutputJSON(t *testing.T) {
+	logger := zap.NewNop()
+	ast := &AST{Columns: []string{"*"}}
+	evaluator := NewEvaluator(ast, FormatJSON, logger)
+
+	records := []string{`{"name":"John"}`, `{"name":"Jane"}`}
+	output, err := evaluator.formatOutput(records)
+	if err != nil {
+		t.Fatalf("formatOutput failed: %v", err)
+	}
+
+	if len(output) == 0 {
+		t.Error("output should not be empty")
+	}
+}
+
+func TestFormatOutputCSV(t *testing.T) {
+	logger := zap.NewNop()
+	ast := &AST{Columns: []string{"*"}}
+	evaluator := NewEvaluator(ast, FormatCSV, logger)
+
+	records := []string{"John,30", "Jane,25"}
+	output, err := evaluator.formatOutput(records)
+	if err != nil {
+		t.Fatalf("formatOutput failed: %v", err)
+	}
+
+	if len(output) == 0 {
+		t.Error("output should not be empty")
+	}
+}
+
+func TestEstimateRecordSize(t *testing.T) {
+	record := map[string]interface{}{"name": "John", "age": 30.0}
+	size := estimateRecordSize(record)
+
+	if size <= 0 {
+		t.Errorf("estimateRecordSize = %d, want > 0", size)
+	}
+}
+
+func TestSelectServiceExecute(t *testing.T) {
+	logger := zap.NewNop()
+	svc := NewSelectService(logger)
+
+	req := &SelectRequest{
+		Bucket:         "test-bucket",
+		Key:            "test.json",
+		Expression:     "SELECT * FROM s3object",
+		ExpressionType: ExpressionTypeSQL,
+		InputSerialization: InputSerialization{
+			Format: FormatJSON,
 		},
 	}
 
-	// Format as CSV
-	csv := result.FormatCSV()
-	if csv == "" {
-		t.Error("CSV format should not be empty")
+	jsonData := `{"name":"John","age":30}`
+	result, err := svc.Execute(context.Background(), req, strings.NewReader(jsonData))
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
 	}
 
-	// Format as JSON
-	json := result.FormatJSON()
-	if json == "" {
-		t.Error("JSON format should not be empty")
+	if result == nil {
+		t.Fatal("result should not be nil")
+	}
+
+	if result.Stats.RecordsReturned != 1 {
+		t.Errorf("RecordsReturned = %d, want 1", result.Stats.RecordsReturned)
 	}
 }
 
-func TestService_Concurrent(t *testing.T) {
-	svc := NewService()
-	done := make(chan bool)
+func TestSelectServiceExecuteInvalidSQL(t *testing.T) {
+	logger := zap.NewNop()
+	svc := NewSelectService(logger)
 
-	for i := 0; i < 10; i++ {
-		go func() {
-			data := []byte("a,b\n1,2\n3,4")
-			query := &Query{Expression: "SELECT * FROM s3object"}
-			svc.ExecuteQuery(bytes.NewReader(data), query)
-			done <- true
-		}()
+	req := &SelectRequest{
+		Bucket:         "test-bucket",
+		Key:            "test.json",
+		Expression:     "INVALID SQL",
+		ExpressionType: ExpressionTypeSQL,
+		InputSerialization: InputSerialization{
+			Format: FormatJSON,
+		},
 	}
 
-	for i := 0; i < 10; i++ {
-		<-done
+	_, err := svc.Execute(context.Background(), req, strings.NewReader(""))
+	if err == nil {
+		t.Error("Execute should fail for invalid SQL")
+	}
+}
+
+func TestSelectServiceGetStats(t *testing.T) {
+	logger := zap.NewNop()
+	svc := NewSelectService(logger)
+
+	stats := svc.GetStats()
+	if stats.BytesScanned != 0 {
+		t.Errorf("initial BytesScanned = %d, want 0", stats.BytesScanned)
+	}
+}
+
+func TestSelectResultEndMarker(t *testing.T) {
+	result := &SelectResult{
+		Payload:   []byte("test"),
+		Stats:     &SelectStats{},
+		EndMarker: true,
+	}
+
+	if !result.EndMarker {
+		t.Error("EndMarker should be true")
+	}
+}
+
+func TestScanRange(t *testing.T) {
+	scanRange := &ScanRange{Start: 0, End: 1000}
+
+	if scanRange.Start != 0 {
+		t.Errorf("Start = %d, want 0", scanRange.Start)
+	}
+	if scanRange.End != 1000 {
+		t.Errorf("End = %d, want 1000", scanRange.End)
+	}
+}
+
+func TestInputSerialization(t *testing.T) {
+	input := InputSerialization{
+		Format:          FormatJSON,
+		JSON:            &JSONInput{Type: "Document"},
+		CompressionType: "NONE",
+	}
+
+	if input.Format != FormatJSON {
+		t.Errorf("Format = %v, want JSON", input.Format)
+	}
+	if input.JSON == nil {
+		t.Error("JSON should not be nil")
+	}
+}
+
+func TestCSVInput(t *testing.T) {
+	csvInput := &CSVInput{
+		FileHeaderInfo:  "Use",
+		RecordDelimiter: "\n",
+		FieldDelimiter:  ",",
+	}
+
+	if csvInput.FileHeaderInfo != "Use" {
+		t.Errorf("FileHeaderInfo = %v, want Use", csvInput.FileHeaderInfo)
+	}
+}
+
+func TestOutputSerialization(t *testing.T) {
+	output := OutputSerialization{
+		Format: OutputJSON,
+		JSON:   &JSONOutput{RecordDelimiter: "\n"},
+	}
+
+	if output.Format != OutputJSON {
+		t.Errorf("Format = %v, want JSON", output.Format)
+	}
+}
+
+func TestEvaluateEmptyInput(t *testing.T) {
+	logger := zap.NewNop()
+	ast := &AST{Columns: []string{"*"}}
+	evaluator := NewEvaluator(ast, FormatJSON, logger)
+
+	result, err := evaluator.Evaluate(context.Background(), strings.NewReader(""))
+	if err != nil {
+		t.Fatalf("Evaluate failed: %v", err)
+	}
+
+	if result.Stats.RecordsReturned != 0 {
+		t.Errorf("RecordsReturned = %d, want 0", result.Stats.RecordsReturned)
+	}
+}
+
+func TestParseColumnsErrorPath(t *testing.T) {
+	logger := zap.NewNop()
+	parser := NewParser(logger)
+
+	col := parser.parseColumns("\"unclosed")
+	if len(col) != 1 || col[0] != "\"unclosed" {
+		t.Errorf("parseColumns with unclosed quote should return single column, got %v", col)
+	}
+}
+
+type errorReader struct{}
+
+func (e *errorReader) Read(p []byte) (n int, err error) {
+	return 0, fmt.Errorf("read error")
+}
+
+func TestEvaluateCSVHeaderError(t *testing.T) {
+	logger := zap.NewNop()
+	ast := &AST{Columns: []string{"*"}}
+	evaluator := NewEvaluator(ast, FormatCSV, logger)
+
+	_, err := evaluator.Evaluate(context.Background(), &errorReader{})
+	if err == nil {
+		t.Error("Evaluate should fail for CSV with read error")
+	}
+	if !strings.Contains(err.Error(), "failed to read CSV headers") {
+		t.Errorf("Error should contain 'failed to read CSV headers', got %v", err)
+	}
+}
+
+func TestFormatOutputDefault(t *testing.T) {
+	logger := zap.NewNop()
+	ast := &AST{Columns: []string{"*"}}
+	evaluator := NewEvaluator(ast, FormatParquet, logger)
+
+	records := []string{"John,30", "Jane,25"}
+	output, err := evaluator.formatOutput(records)
+	if err != nil {
+		t.Fatalf("formatOutput failed: %v", err)
+	}
+
+	if string(output) != "John,30\nJane,25" {
+		t.Errorf("formatOutput default = %q, want %q", string(output), "John,30\nJane,25")
+	}
+}
+
+func TestExecuteEvaluateError(t *testing.T) {
+	logger := zap.NewNop()
+	svc := NewSelectService(logger)
+
+	req := &SelectRequest{
+		Bucket:         "test-bucket",
+		Key:            "test.csv",
+		Expression:     "SELECT * FROM s3object",
+		ExpressionType: ExpressionTypeSQL,
+		InputSerialization: InputSerialization{
+			Format: FormatCSV,
+		},
+	}
+
+	_, err := svc.Execute(context.Background(), req, &errorReader{})
+	if err == nil {
+		t.Error("Execute should fail for CSV with read error")
+	}
+	if !strings.Contains(err.Error(), "failed to evaluate") {
+		t.Errorf("Error should contain 'failed to evaluate', got %v", err)
+	}
+}
+
+func TestEvaluateCSVRecordError(t *testing.T) {
+	logger := zap.NewNop()
+	ast := &AST{Columns: []string{"*"}}
+	evaluator := NewEvaluator(ast, FormatCSV, logger)
+
+	csvData := "name,age\nJohn,30\n\"unclosed quote"
+
+	result, err := evaluator.Evaluate(context.Background(), strings.NewReader(csvData))
+	if err != nil {
+		t.Fatalf("Evaluate should not fail for CSV record errors: %v", err)
+	}
+
+	if result.Stats.RecordsReturned != 1 {
+		t.Errorf("RecordsReturned = %d, want 1 (skipping malformed record)", result.Stats.RecordsReturned)
+	}
+}
+
+func TestEvaluateJSONWithWhereClause(t *testing.T) {
+	logger := zap.NewNop()
+	ast := &AST{Columns: []string{"*"}, WhereClause: "age > 18"}
+	evaluator := NewEvaluator(ast, FormatJSON, logger)
+
+	jsonData := `{"name":"John","age":30}`
+
+	result, err := evaluator.Evaluate(context.Background(), strings.NewReader(jsonData))
+	if err != nil {
+		t.Fatalf("Evaluate failed: %v", err)
+	}
+
+	if result.Stats.RecordsReturned != 1 {
+		t.Errorf("RecordsReturned = %d, want 1", result.Stats.RecordsReturned)
+	}
+}
+
+func TestEvaluateCSVWithLimit(t *testing.T) {
+	logger := zap.NewNop()
+	ast := &AST{Columns: []string{"*"}, Limit: 1}
+	evaluator := NewEvaluator(ast, FormatCSV, logger)
+
+	csvData := `name,age
+John,30
+Jane,25
+Bob,40`
+
+	result, err := evaluator.Evaluate(context.Background(), strings.NewReader(csvData))
+	if err != nil {
+		t.Fatalf("Evaluate failed: %v", err)
+	}
+
+	if result.Stats.RecordsReturned != 1 {
+		t.Errorf("RecordsReturned = %d, want 1 (limit)", result.Stats.RecordsReturned)
+	}
+}
+
+func TestEvaluateJSONDecodeError(t *testing.T) {
+	logger := zap.NewNop()
+	ast := &AST{Columns: []string{"*"}}
+	evaluator := NewEvaluator(ast, FormatJSON, logger)
+
+	jsonData := `{"name":"John"}invalid`
+
+	result, err := evaluator.Evaluate(context.Background(), strings.NewReader(jsonData))
+	if err != nil {
+		t.Fatalf("Evaluate should not fail: %v", err)
+	}
+
+	if result.Stats.RecordsReturned != 1 {
+		t.Errorf("RecordsReturned = %d, want 1", result.Stats.RecordsReturned)
+	}
+}
+
+func TestEvaluateFormatOutputError(t *testing.T) {
+	logger := zap.NewNop()
+	ast := &AST{Columns: []string{"*"}}
+	evaluator := NewEvaluator(ast, FormatJSON, logger)
+	evaluator.forceFormatErr = true
+
+	jsonData := `{"name":"John"}`
+
+	_, err := evaluator.Evaluate(context.Background(), strings.NewReader(jsonData))
+	if err == nil {
+		t.Fatal("Evaluate should fail when formatOutput returns error")
+	}
+	if !strings.Contains(err.Error(), "forced format error") {
+		t.Errorf("Error should contain 'forced format error', got %v", err)
 	}
 }

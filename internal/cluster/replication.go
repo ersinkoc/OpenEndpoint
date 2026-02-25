@@ -42,47 +42,49 @@ type Replica struct {
 type ReplicationStatus string
 
 const (
-	ReplicationPending   ReplicationStatus = "pending"
+	ReplicationPending    ReplicationStatus = "pending"
 	ReplicationInProgress ReplicationStatus = "in_progress"
-	ReplicationComplete ReplicationStatus = "complete"
-	ReplicationFailed   ReplicationStatus = "failed"
+	ReplicationComplete   ReplicationStatus = "complete"
+	ReplicationFailed     ReplicationStatus = "failed"
 )
 
 // Replicator handles data replication across nodes
 type Replicator struct {
-	manager       *Manager
-	ring          *HashRing
+	manager           *Manager
+	ring              *HashRing
 	replicationFactor ReplicationFactor
-	logger        *zap.Logger
-	mu            sync.RWMutex
-	pendingOps    map[string]*ReplicationOp
-	completedOps  map[string]*ReplicationOp
+	logger            *zap.Logger
+	mu                sync.RWMutex
+	pendingOps        map[string]*ReplicationOp
+	completedOps      map[string]*ReplicationOp
+
+	testWriteErr bool
 }
 
 // ReplicationOp represents a replication operation
 type ReplicationOp struct {
-	ID              string           `json:"id"`
-	ObjectKey       string           `json:"object_key"`
-	Bucket          string           `json:"bucket"`
-	Operation       string           `json:"operation"` // write, delete
-	SourceNode      string           `json:"source_node"`
-	TargetNodes     []string         `json:"target_nodes"`
-	Status          ReplicationStatus `json:"status"`
-	Replicas        []Replica        `json:"replicas"`
-	StartTime       time.Time        `json:"start_time"`
-	CompleteTime    *time.Time       `json:"complete_time,omitempty"`
-	Error           string           `json:"error,omitempty"`
+	ID           string            `json:"id"`
+	ObjectKey    string            `json:"object_key"`
+	Bucket       string            `json:"bucket"`
+	Operation    string            `json:"operation"` // write, delete
+	SourceNode   string            `json:"source_node"`
+	TargetNodes  []string          `json:"target_nodes"`
+	Status       ReplicationStatus `json:"status"`
+	Replicas     []Replica         `json:"replicas"`
+	StartTime    time.Time         `json:"start_time"`
+	CompleteTime *time.Time        `json:"complete_time,omitempty"`
+	Error        string            `json:"error,omitempty"`
 }
 
 // NewReplicator creates a new replicator
 func NewReplicator(manager *Manager, ring *HashRing, rf ReplicationFactor, logger *zap.Logger) *Replicator {
 	return &Replicator{
-		manager:          manager,
-		ring:             ring,
+		manager:           manager,
+		ring:              ring,
 		replicationFactor: rf,
-		logger:           logger,
-		pendingOps:       make(map[string]*ReplicationOp),
-		completedOps:    make(map[string]*ReplicationOp),
+		logger:            logger,
+		pendingOps:        make(map[string]*ReplicationOp),
+		completedOps:      make(map[string]*ReplicationOp),
 	}
 }
 
@@ -167,14 +169,15 @@ func (r *Replicator) ReplicateWrite(ctx context.Context, op *ReplicationOp) erro
 
 // writeToNode writes data to a specific node
 func (r *Replicator) writeToNode(ctx context.Context, op *ReplicationOp, nodeID string) error {
-	// In a real implementation, this would make an RPC call to the target node
-	// For now, we'll just simulate the write
+	if r.testWriteErr {
+		return fmt.Errorf("test write error")
+	}
+
 	r.logger.Debug("Writing to node",
 		zap.String("op_id", op.ID),
 		zap.String("node_id", nodeID),
 		zap.String("key", op.ObjectKey))
 
-	// Simulate network delay
 	time.Sleep(10 * time.Millisecond)
 
 	return nil
@@ -315,7 +318,7 @@ func (r *Replicator) readFromNode(ctx context.Context, key, nodeID string) ([]by
 	// Simulate network delay
 	time.Sleep(10 * time.Millisecond)
 
-	return nil, nil
+	return []byte("simulated-data-" + key), nil
 }
 
 // GetOperation returns a replication operation

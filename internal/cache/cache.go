@@ -10,12 +10,12 @@ import (
 
 // Cache implements an LRU cache
 type Cache struct {
-	mu       sync.RWMutex
-	items    map[string]*list.Element
-	lru      *list.List
-	maxSize  int
-	ttl      time.Duration
-	stats    *Stats
+	mu      sync.RWMutex
+	items   map[string]*list.Element
+	lru     *list.List
+	maxSize int
+	ttl     time.Duration
+	stats   *Stats
 }
 
 // Item represents a cache item
@@ -49,10 +49,10 @@ func NewCache(maxSize int, ttl time.Duration) *Cache {
 // Get retrieves an item from the cache
 func (c *Cache) Get(key string) (interface{}, bool) {
 	c.mu.RLock()
-	defer c.mu.RUnlock()
 
 	element, ok := c.items[key]
 	if !ok {
+		c.mu.RUnlock()
 		c.stats.mu.Lock()
 		c.stats.Misses++
 		c.stats.mu.Unlock()
@@ -63,10 +63,9 @@ func (c *Cache) Get(key string) (interface{}, bool) {
 
 	// Check if expired
 	if time.Now().After(item.Expiration) {
+		// Don't remove expired items during read - just return not found
+		// The cleanup goroutine will remove expired items
 		c.mu.RUnlock()
-		c.mu.Lock()
-		c.removeElement(element)
-		c.mu.Unlock()
 		c.stats.mu.Lock()
 		c.stats.Misses++
 		c.stats.mu.Unlock()
@@ -75,6 +74,8 @@ func (c *Cache) Get(key string) (interface{}, bool) {
 
 	// Move to front (most recently used)
 	c.lru.MoveToFront(element)
+
+	c.mu.RUnlock()
 
 	c.stats.mu.Lock()
 	c.stats.Hits++
@@ -299,7 +300,11 @@ func (mc *MetadataCache) DeleteMetadata(bucket, key string) {
 
 // StartCleanup starts the cache cleanup goroutine
 func (c *Cache) StartCleanup(ctx context.Context) {
-	ticker := time.NewTicker(1 * time.Minute)
+	c.StartCleanupWithInterval(ctx, 1*time.Minute)
+}
+
+func (c *Cache) StartCleanupWithInterval(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	for {

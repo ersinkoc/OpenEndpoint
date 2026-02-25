@@ -2,47 +2,92 @@ package encryption
 
 import (
 	"bytes"
+	"crypto/cipher"
 	"crypto/rand"
-	"io"
+	"errors"
 	"testing"
 )
 
-func TestNewEncryptor(t *testing.T) {
-	key := make([]byte, 32) // AES-256 key
-	rand.Read(key)
-
-	enc, err := NewEncryptor(key)
-	if err != nil {
-		t.Fatalf("NewEncryptor failed: %v", err)
+func TestNewKeyManager(t *testing.T) {
+	km := NewKeyManager()
+	if km == nil {
+		t.Fatal("KeyManager should not be nil")
 	}
-
-	if enc == nil {
-		t.Fatal("Encryptor should not be nil")
+	if km.keys == nil {
+		t.Error("keys map should be initialized")
 	}
 }
 
-func TestNewEncryptor_InvalidKey(t *testing.T) {
-	tests := []struct {
-		name string
-		key  []byte
-	}{
-		{"nil key", nil},
-		{"empty key", []byte{}},
-		{"short key", []byte("short")},
-		{"16 bytes (AES-128)", make([]byte, 16)},
-		{"24 bytes (AES-192)", make([]byte, 24)},
+func TestKeyManagerGenerateKey(t *testing.T) {
+	km := NewKeyManager()
+
+	key, err := km.GenerateKey("test-key")
+	if err != nil {
+		t.Fatalf("GenerateKey failed: %v", err)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := NewEncryptor(tt.key)
-			// AES-128 and AES-192 should work, only nil/empty/short should fail
-			if tt.key == nil || len(tt.key) < 16 {
-				if err == nil {
-					t.Error("Should return error for invalid key")
-				}
-			}
-		})
+	if len(key) != 32 {
+		t.Errorf("Key length = %d, want 32", len(key))
+	}
+
+	retrieved, ok := km.GetKey("test-key")
+	if !ok {
+		t.Fatal("Should retrieve generated key")
+	}
+	if !bytes.Equal(key, retrieved) {
+		t.Error("Retrieved key does not match generated key")
+	}
+}
+
+func TestKeyManagerGenerateKeyDifferent(t *testing.T) {
+	km := NewKeyManager()
+
+	key1, _ := km.GenerateKey("key1")
+	key2, _ := km.GenerateKey("key2")
+
+	if bytes.Equal(key1, key2) {
+		t.Error("Different keys should have different values")
+	}
+}
+
+func TestKeyManagerSetKey(t *testing.T) {
+	km := NewKeyManager()
+
+	key := make([]byte, 32)
+	rand.Read(key)
+
+	km.SetKey("key1", key)
+
+	retrieved, ok := km.GetKey("key1")
+	if !ok {
+		t.Fatal("Should retrieve key")
+	}
+	if !bytes.Equal(key, retrieved) {
+		t.Error("Retrieved key does not match original")
+	}
+}
+
+func TestKeyManagerGetKeyNotFound(t *testing.T) {
+	km := NewKeyManager()
+
+	_, ok := km.GetKey("nonexistent")
+	if ok {
+		t.Error("GetKey should return false for nonexistent key")
+	}
+}
+
+func TestKeyManagerDeleteKey(t *testing.T) {
+	km := NewKeyManager()
+
+	key := make([]byte, 32)
+	rand.Read(key)
+
+	km.SetKey("key1", key)
+	km.DeleteKey("key1")
+
+	_, ok := km.GetKey("key1")
+	if ok {
+		t.Error("Key should be deleted")
 	}
 }
 
@@ -50,356 +95,338 @@ func TestEncryptDecrypt(t *testing.T) {
 	key := make([]byte, 32)
 	rand.Read(key)
 
-	enc, err := NewEncryptor(key)
-	if err != nil {
-		t.Fatalf("NewEncryptor failed: %v", err)
-	}
+	plaintext := []byte("test data for encryption")
 
-	plaintext := []byte("This is a secret message")
-
-	ciphertext, err := enc.Encrypt(plaintext)
+	ciphertext, err := Encrypt(key, plaintext)
 	if err != nil {
 		t.Fatalf("Encrypt failed: %v", err)
 	}
 
-	if len(ciphertext) == 0 {
-		t.Error("Ciphertext should not be empty")
+	if len(ciphertext) <= len(plaintext) {
+		t.Error("Ciphertext should be longer than plaintext (includes nonce)")
 	}
 
-	// Ciphertext should be different from plaintext
-	if bytes.Equal(ciphertext, plaintext) {
-		t.Error("Ciphertext should not equal plaintext")
-	}
-
-	// Decrypt
-	decrypted, err := enc.Decrypt(ciphertext)
+	decrypted, err := Decrypt(key, ciphertext)
 	if err != nil {
 		t.Fatalf("Decrypt failed: %v", err)
 	}
 
-	if !bytes.Equal(decrypted, plaintext) {
-		t.Errorf("Decrypted = %s, want %s", decrypted, plaintext)
+	if !bytes.Equal(plaintext, decrypted) {
+		t.Error("Decrypted text does not match original")
 	}
 }
 
-func TestEncryptDecrypt_Empty(t *testing.T) {
+func TestEncryptDifferentEachTime(t *testing.T) {
 	key := make([]byte, 32)
 	rand.Read(key)
 
-	enc, _ := NewEncryptor(key)
+	plaintext := []byte("test data")
 
-	plaintext := []byte("")
+	ciphertext1, _ := Encrypt(key, plaintext)
+	ciphertext2, _ := Encrypt(key, plaintext)
 
-	ciphertext, err := enc.Encrypt(plaintext)
-	if err != nil {
-		t.Fatalf("Encrypt failed: %v", err)
-	}
-
-	decrypted, err := enc.Decrypt(ciphertext)
-	if err != nil {
-		t.Fatalf("Decrypt failed: %v", err)
-	}
-
-	if !bytes.Equal(decrypted, plaintext) {
-		t.Error("Decrypted should equal plaintext")
-	}
-}
-
-func TestEncryptDecrypt_LargeData(t *testing.T) {
-	key := make([]byte, 32)
-	rand.Read(key)
-
-	enc, _ := NewEncryptor(key)
-
-	// 1MB of data
-	plaintext := make([]byte, 1024*1024)
-	rand.Read(plaintext)
-
-	ciphertext, err := enc.Encrypt(plaintext)
-	if err != nil {
-		t.Fatalf("Encrypt failed: %v", err)
-	}
-
-	decrypted, err := enc.Decrypt(ciphertext)
-	if err != nil {
-		t.Fatalf("Decrypt failed: %v", err)
-	}
-
-	if !bytes.Equal(decrypted, plaintext) {
-		t.Error("Decrypted should equal plaintext")
-	}
-}
-
-func TestEncrypt_UniqueCiphertext(t *testing.T) {
-	key := make([]byte, 32)
-	rand.Read(key)
-
-	enc, _ := NewEncryptor(key)
-
-	plaintext := []byte("same message")
-
-	ciphertext1, _ := enc.Encrypt(plaintext)
-	ciphertext2, _ := enc.Encrypt(plaintext)
-
-	// Same plaintext should produce different ciphertext (due to random nonce)
 	if bytes.Equal(ciphertext1, ciphertext2) {
-		t.Error("Same plaintext should produce different ciphertext")
-	}
-
-	// Both should decrypt correctly
-	decrypted1, _ := enc.Decrypt(ciphertext1)
-	decrypted2, _ := enc.Decrypt(ciphertext2)
-
-	if !bytes.Equal(decrypted1, plaintext) {
-		t.Error("First decryption failed")
-	}
-
-	if !bytes.Equal(decrypted2, plaintext) {
-		t.Error("Second decryption failed")
+		t.Error("Same plaintext should produce different ciphertext (random nonce)")
 	}
 }
 
-func TestDecrypt_WrongKey(t *testing.T) {
+func TestDecryptWrongKey(t *testing.T) {
 	key1 := make([]byte, 32)
 	key2 := make([]byte, 32)
 	rand.Read(key1)
 	rand.Read(key2)
 
-	enc1, _ := NewEncryptor(key1)
-	enc2, _ := NewEncryptor(key2)
+	plaintext := []byte("test data")
+	ciphertext, _ := Encrypt(key1, plaintext)
 
-	plaintext := []byte("secret message")
-
-	ciphertext, _ := enc1.Encrypt(plaintext)
-
-	// Try to decrypt with wrong key
-	_, err := enc2.Decrypt(ciphertext)
+	_, err := Decrypt(key2, ciphertext)
 	if err == nil {
-		t.Error("Should fail to decrypt with wrong key")
+		t.Error("Decrypt with wrong key should fail")
 	}
 }
 
-func TestDecrypt_Corrupted(t *testing.T) {
+func TestDecryptInvalidCiphertext(t *testing.T) {
 	key := make([]byte, 32)
 	rand.Read(key)
 
-	enc, _ := NewEncryptor(key)
-
-	plaintext := []byte("secret message")
-	ciphertext, _ := enc.Encrypt(plaintext)
-
-	// Corrupt the ciphertext
-	ciphertext[0] ^= 0xFF
-
-	_, err := enc.Decrypt(ciphertext)
+	_, err := Decrypt(key, []byte("short"))
 	if err == nil {
-		t.Error("Should fail to decrypt corrupted ciphertext")
+		t.Error("Decrypt with short ciphertext should fail")
 	}
 }
 
-func TestEncryptReader(t *testing.T) {
+func TestEncryptDecryptString(t *testing.T) {
 	key := make([]byte, 32)
 	rand.Read(key)
 
-	enc, _ := NewEncryptor(key)
+	plaintext := "test string for encryption"
 
-	plaintext := []byte("This is a test message for reader encryption")
-	reader := bytes.NewReader(plaintext)
-
-	encryptedReader := enc.EncryptReader(reader)
-
-	ciphertext, err := io.ReadAll(encryptedReader)
+	ciphertext, err := EncryptString(key, plaintext)
 	if err != nil {
-		t.Fatalf("ReadAll failed: %v", err)
+		t.Fatalf("EncryptString failed: %v", err)
 	}
 
 	if len(ciphertext) == 0 {
 		t.Error("Ciphertext should not be empty")
 	}
-}
 
-func TestDecryptReader(t *testing.T) {
-	key := make([]byte, 32)
-	rand.Read(key)
-
-	enc, _ := NewEncryptor(key)
-
-	plaintext := []byte("This is a test message")
-
-	// Encrypt
-	ciphertext, _ := enc.Encrypt(plaintext)
-
-	// Decrypt via reader
-	decryptReader := enc.DecryptReader(bytes.NewReader(ciphertext))
-	decrypted, err := io.ReadAll(decryptReader)
+	decrypted, err := DecryptString(key, ciphertext)
 	if err != nil {
-		t.Fatalf("ReadAll failed: %v", err)
+		t.Fatalf("DecryptString failed: %v", err)
 	}
 
-	if !bytes.Equal(decrypted, plaintext) {
-		t.Error("Decrypted should equal plaintext")
+	if decrypted != plaintext {
+		t.Errorf("Decrypted = %q, want %q", decrypted, plaintext)
 	}
 }
 
-func TestEncryptWriter(t *testing.T) {
+func TestDecryptStringInvalidBase64(t *testing.T) {
 	key := make([]byte, 32)
 	rand.Read(key)
 
-	enc, _ := NewEncryptor(key)
+	_, err := DecryptString(key, "invalid base64!!!")
+	if err == nil {
+		t.Error("DecryptString with invalid base64 should fail")
+	}
+}
 
-	plaintext := []byte("This is a test message for writer encryption")
-	var buf bytes.Buffer
+func TestNewSSEClientSideProcessor(t *testing.T) {
+	km := NewKeyManager()
+	processor := NewSSEClientSideProcessor(km)
 
-	encryptedWriter, err := enc.EncryptWriter(&buf)
+	if processor == nil {
+		t.Fatal("Processor should not be nil")
+	}
+
+	if processor.keyManager == nil {
+		t.Error("KeyManager should be set")
+	}
+}
+
+func TestSSEClientSideProcessorEncrypt(t *testing.T) {
+	km := NewKeyManager()
+	processor := NewSSEClientSideProcessor(km)
+
+	key := make([]byte, 32)
+	rand.Read(key)
+
+	data := []byte("test data")
+	opts := SSEClientSide{
+		Key:                 key,
+		KeyID:               "test-key-id",
+		EncryptionAlgorithm: "AES256",
+	}
+
+	encrypted, err := processor.Encrypt("bucket", "key", data, opts)
 	if err != nil {
-		t.Fatalf("EncryptWriter failed: %v", err)
+		t.Fatalf("Encrypt failed: %v", err)
 	}
 
-	encryptedWriter.Write(plaintext)
-	encryptedWriter.Close()
+	if len(encrypted) <= len(data) {
+		t.Error("Encrypted data should be longer than original")
+	}
+}
 
-	ciphertext := buf.Bytes()
-	if len(ciphertext) == 0 {
-		t.Error("Ciphertext should not be empty")
+func TestSSEClientSideProcessorEncryptNoKey(t *testing.T) {
+	km := NewKeyManager()
+	processor := NewSSEClientSideProcessor(km)
+
+	data := []byte("test data")
+	opts := SSEClientSide{}
+
+	encrypted, err := processor.Encrypt("bucket", "key", data, opts)
+	if err != nil {
+		t.Fatalf("Encrypt failed: %v", err)
 	}
 
-	// Verify by decrypting
-	decrypted, err := enc.Decrypt(ciphertext)
+	if !bytes.Equal(data, encrypted) {
+		t.Error("Without key, data should be returned unchanged")
+	}
+}
+
+func TestSSEClientSideProcessorDecrypt(t *testing.T) {
+	km := NewKeyManager()
+	processor := NewSSEClientSideProcessor(km)
+
+	key := make([]byte, 32)
+	rand.Read(key)
+
+	data := []byte("test data")
+	opts := SSEClientSide{Key: key}
+
+	encrypted, _ := processor.Encrypt("bucket", "key", data, opts)
+	decrypted, err := processor.Decrypt("bucket", "key", encrypted, opts)
+
 	if err != nil {
 		t.Fatalf("Decrypt failed: %v", err)
 	}
 
-	if !bytes.Equal(decrypted, plaintext) {
-		t.Error("Decrypted should equal plaintext")
+	if !bytes.Equal(data, decrypted) {
+		t.Error("Decrypted data should match original")
 	}
 }
 
-func TestDecryptWriter(t *testing.T) {
-	key := make([]byte, 32)
-	rand.Read(key)
+func TestSSEClientSideProcessorDecryptNoKey(t *testing.T) {
+	km := NewKeyManager()
+	processor := NewSSEClientSideProcessor(km)
 
-	enc, _ := NewEncryptor(key)
+	data := []byte("test data")
+	opts := SSEClientSide{}
 
-	plaintext := []byte("Test message")
-	ciphertext, _ := enc.Encrypt(plaintext)
-
-	var buf bytes.Buffer
-
-	decryptWriter, err := enc.DecryptWriter(&buf)
+	decrypted, err := processor.Decrypt("bucket", "key", data, opts)
 	if err != nil {
-		t.Fatalf("DecryptWriter failed: %v", err)
+		t.Fatalf("Decrypt failed: %v", err)
 	}
 
-	decryptWriter.Write(ciphertext)
-	decryptWriter.Close()
-
-	decrypted := buf.Bytes()
-	if !bytes.Equal(decrypted, plaintext) {
-		t.Error("Decrypted should equal plaintext")
+	if !bytes.Equal(data, decrypted) {
+		t.Error("Without key, data should be returned unchanged")
 	}
 }
 
-func TestKeyRotation(t *testing.T) {
-	oldKey := make([]byte, 32)
-	newKey := make([]byte, 32)
-	rand.Read(oldKey)
-	rand.Read(newKey)
+func TestSSEClientSideProcessorGetTags(t *testing.T) {
+	km := NewKeyManager()
+	processor := NewSSEClientSideProcessor(km)
 
-	oldEnc, _ := NewEncryptor(oldKey)
-	newEnc, _ := NewEncryptor(newKey)
+	opts := SSEClientSide{
+		KeyID:               "test-key-id",
+		EncryptionAlgorithm: "AES256",
+	}
 
-	plaintext := []byte("secret data")
+	tags := processor.GetTags(opts)
 
-	// Encrypt with old key
-	ciphertext, _ := oldEnc.Encrypt(plaintext)
+	if len(tags) == 0 {
+		t.Error("Should return tags")
+	}
 
-	// Re-encrypt with new key
-	decrypted, _ := oldEnc.Decrypt(ciphertext)
-	newCiphertext, _ := newEnc.Encrypt(decrypted)
-
-	// Verify new key can decrypt
-	finalDecrypted, _ := newEnc.Decrypt(newCiphertext)
-
-	if !bytes.Equal(finalDecrypted, plaintext) {
-		t.Error("Key rotation failed")
+	if _, ok := tags["X-Amz-Server-Side-Encryption"]; !ok {
+		t.Error("Should have encryption algorithm tag")
 	}
 }
 
-func TestConcurrency(t *testing.T) {
+func TestSSEClientSideProcessorGetTagsEmpty(t *testing.T) {
+	km := NewKeyManager()
+	processor := NewSSEClientSideProcessor(km)
+
+	opts := SSEClientSide{}
+	tags := processor.GetTags(opts)
+
+	if len(tags) != 0 {
+		t.Error("Empty options should return empty tags")
+	}
+}
+
+func TestSSEClientSide(t *testing.T) {
+	opts := SSEClientSide{
+		Key:                 []byte{1, 2, 3, 4},
+		KeyID:               "test-id",
+		EncryptionAlgorithm: "AES256",
+	}
+
+	if len(opts.Key) != 4 {
+		t.Errorf("Key length = %d, want 4", len(opts.Key))
+	}
+	if opts.KeyID != "test-id" {
+		t.Errorf("KeyID = %v, want test-id", opts.KeyID)
+	}
+}
+
+func TestEncryptWithInvalidKey(t *testing.T) {
+	_, err := Encrypt([]byte("short"), []byte("test"))
+	if err == nil {
+		t.Error("Encrypt with invalid key should fail")
+	}
+}
+
+func TestDecryptWithInvalidKey(t *testing.T) {
+	ciphertext := make([]byte, 100)
+	rand.Read(ciphertext)
+
+	_, err := Decrypt([]byte("short"), ciphertext)
+	if err == nil {
+		t.Error("Decrypt with invalid key should fail")
+	}
+}
+
+type errorReader struct {
+	err error
+}
+
+func (r *errorReader) Read(p []byte) (n int, err error) {
+	return 0, r.err
+}
+
+func TestGenerateKeyRandError(t *testing.T) {
+	originalReader := randReader
+	randReader = &errorReader{err: errors.New("read error")}
+	defer func() { randReader = originalReader }()
+
+	km := NewKeyManager()
+	_, err := km.GenerateKey("test-key")
+	if err == nil {
+		t.Error("GenerateKey should return error when rand read fails")
+	}
+}
+
+func TestEncryptIOReadFullError(t *testing.T) {
+	originalReader := randReader
+	randReader = &errorReader{err: errors.New("read error")}
+	defer func() { randReader = originalReader }()
+
 	key := make([]byte, 32)
-	rand.Read(key)
-
-	enc, _ := NewEncryptor(key)
-
-	done := make(chan bool)
-
-	for i := 0; i < 10; i++ {
-		go func(id int) {
-			plaintext := []byte("concurrent test message")
-			for j := 0; j < 10; j++ {
-				ciphertext, err := enc.Encrypt(plaintext)
-				if err != nil {
-					t.Errorf("Encrypt failed: %v", err)
-				}
-
-				decrypted, err := enc.Decrypt(ciphertext)
-				if err != nil {
-					t.Errorf("Decrypt failed: %v", err)
-				}
-
-				if !bytes.Equal(decrypted, plaintext) {
-					t.Errorf("Decryption mismatch")
-				}
-			}
-			done <- true
-		}(i)
-	}
-
-	for i := 0; i < 10; i++ {
-		<-done
+	_, err := Encrypt(key, []byte("test"))
+	if err == nil {
+		t.Error("Encrypt should return error when io.ReadFull fails")
 	}
 }
 
-func BenchmarkEncrypt(b *testing.B) {
+type mockBlock struct {
+	blockSize int
+}
+
+func (b *mockBlock) BlockSize() int          { return b.blockSize }
+func (b *mockBlock) Encrypt(dst, src []byte) { copy(dst, src) }
+func (b *mockBlock) Decrypt(dst, src []byte) { copy(dst, src) }
+
+func TestEncryptNewGCMError(t *testing.T) {
+	originalNewGCM := newGCM
+	newGCM = func(block cipher.Block) (cipher.AEAD, error) {
+		return nil, errors.New("gcm error")
+	}
+	defer func() { newGCM = originalNewGCM }()
+
 	key := make([]byte, 32)
-	rand.Read(key)
-	enc, _ := NewEncryptor(key)
-
-	data := make([]byte, 1024)
-	rand.Read(data)
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		enc.Encrypt(data)
+	_, err := Encrypt(key, []byte("test"))
+	if err == nil {
+		t.Error("Encrypt should return error when NewGCM fails")
 	}
 }
 
-func BenchmarkDecrypt(b *testing.B) {
+func TestDecryptNewGCMError(t *testing.T) {
+	originalNewGCM := newGCM
+	newGCM = func(block cipher.Block) (cipher.AEAD, error) {
+		return nil, errors.New("gcm error")
+	}
+	defer func() { newGCM = originalNewGCM }()
+
 	key := make([]byte, 32)
-	rand.Read(key)
-	enc, _ := NewEncryptor(key)
-
-	data := make([]byte, 1024)
-	rand.Read(data)
-	ciphertext, _ := enc.Encrypt(data)
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		enc.Decrypt(ciphertext)
+	_, err := Decrypt(key, make([]byte, 100))
+	if err == nil {
+		t.Error("Decrypt should return error when NewGCM fails")
 	}
 }
 
-func BenchmarkEncryptDecrypt(b *testing.B) {
+func TestEncryptStringError(t *testing.T) {
+	_, err := EncryptString([]byte("short"), "test")
+	if err == nil {
+		t.Error("EncryptString with invalid key should fail")
+	}
+}
+
+func TestDecryptStringDecryptError(t *testing.T) {
 	key := make([]byte, 32)
-	rand.Read(key)
-	enc, _ := NewEncryptor(key)
-
-	data := make([]byte, 1024)
-	rand.Read(data)
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		ciphertext, _ := enc.Encrypt(data)
-		enc.Decrypt(ciphertext)
+	shortCiphertext := "dG9vIHNob3J0"
+	_, err := DecryptString(key, shortCiphertext)
+	if err == nil {
+		t.Error("DecryptString with too short ciphertext should fail")
 	}
 }

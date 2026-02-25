@@ -14,13 +14,13 @@ import (
 
 // Volume represents a packed volume file
 type Volume struct {
-	id      uint64
-	path    string
-	file    *os.File
-	writer  *bufio.Writer
-	index   *Index
-	mu      sync.RWMutex
-	size    int64
+	id     uint64
+	path   string
+	file   *os.File
+	writer *bufio.Writer
+	index  *Index
+	mu     sync.RWMutex
+	size   int64
 }
 
 // Index stores needle metadata in memory
@@ -31,20 +31,20 @@ type Index struct {
 
 // Needle represents a single object in the volume
 type Needle struct {
-	Key         string
-	Offset      int64
-	Size        int64
-	Cookie      uint32
+	Key          string
+	Offset       int64
+	Size         int64
+	Cookie       uint32
 	LastModified int64
 }
 
 // VolumeManager manages multiple volumes
 type VolumeManager struct {
-	rootDir    string
-	volumes    map[uint64]*Volume
-	currentID  uint64
-	mu         sync.RWMutex
-	maxSize    int64
+	rootDir   string
+	volumes   map[uint64]*Volume
+	currentID uint64
+	mu        sync.RWMutex
+	maxSize   int64
 }
 
 // NewVolumeManager creates a new volume manager
@@ -54,9 +54,9 @@ func NewVolumeManager(rootDir string, maxSize int64) (*VolumeManager, error) {
 	}
 
 	vm := &VolumeManager{
-		rootDir:  rootDir,
-		volumes:  make(map[uint64]*Volume),
-		maxSize:  maxSize,
+		rootDir: rootDir,
+		volumes: make(map[uint64]*Volume),
+		maxSize: maxSize,
 	}
 
 	// Load existing volumes
@@ -268,9 +268,9 @@ func (v *Volume) loadIndex() error {
 		lastMod := int64(binary.LittleEndian.Uint64(header[16:24]))
 
 		v.index.entries[cookie] = &Needle{
-			Offset:      offset,
-			Size:        size,
-			Cookie:      uint32(cookie),
+			Offset:       offset,
+			Size:         size,
+			Cookie:       uint32(cookie),
 			LastModified: lastMod,
 		}
 
@@ -325,6 +325,26 @@ func (vm *VolumeManager) Delete(key string) error {
 	return fmt.Errorf("key not found: %s", key)
 }
 
+// createVolume creates a new volume
+func (vm *VolumeManager) createVolume(id uint64) (*Volume, error) {
+	path := filepath.Join(vm.rootDir, fmt.Sprintf("%d.dat", id))
+	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0644)
+	if err != nil {
+		return nil, err
+	}
+
+	vol := &Volume{
+		id:     id,
+		path:   path,
+		file:   file,
+		writer: bufio.NewWriter(file),
+		index:  NewIndex(),
+		size:   0,
+	}
+
+	return vol, nil
+}
+
 // getWritableVolume returns a volume that can accept new data
 func (vm *VolumeManager) getWritableVolume() *Volume {
 	for _, vol := range vm.volumes {
@@ -335,7 +355,7 @@ func (vm *VolumeManager) getWritableVolume() *Volume {
 
 	// Create new volume
 	vm.currentID++
-	vol, _ := vm.openVolume(vm.currentID)
+	vol, _ := vm.createVolume(vm.currentID)
 	vm.volumes[vm.currentID] = vol
 	return vol
 }

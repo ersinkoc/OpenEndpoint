@@ -5,12 +5,14 @@ import (
 	"fmt"
 )
 
+var xmlMarshalIndent = xml.MarshalIndent
+
 // Config represents bucket website configuration
 type Config struct {
-	XMLName         xml.Name       `xml:"WebsiteConfiguration"`
-	IndexDocument   *IndexDocument `xml:"IndexDocument"`
-	ErrorDocument   *ErrorDocument `xml:"ErrorDocument"`
-	RoutingRules    []RoutingRule `xml:"RoutingRules>RoutingRule"`
+	XMLName       xml.Name       `xml:"WebsiteConfiguration"`
+	IndexDocument *IndexDocument `xml:"IndexDocument"`
+	ErrorDocument *ErrorDocument `xml:"ErrorDocument"`
+	RoutingRules  []RoutingRule  `xml:"RoutingRules>RoutingRule"`
 }
 
 // IndexDocument specifies the default index page
@@ -31,22 +33,22 @@ type RoutingRule struct {
 
 // Condition specifies when a routing rule is applied
 type Condition struct {
-	KeyPrefixEquals      string `xml:"KeyPrefixEquals"`
+	KeyPrefixEquals             string `xml:"KeyPrefixEquals"`
 	HttpErrorCodeReturnedEquals string `xml:"HttpErrorCodeReturnedEquals"`
 }
 
 // Redirect specifies how to redirect
 type Redirect struct {
-	Protocol           string `xml:"Protocol,omitempty"`
-	HostName           string `xml:"HostName,omitempty"`
+	Protocol             string `xml:"Protocol,omitempty"`
+	HostName             string `xml:"HostName,omitempty"`
 	ReplaceKeyPrefixWith string `xml:"ReplaceKeyPrefixWith,omitempty"`
-	ReplaceKeyWith     string `xml:"ReplaceKeyWith,omitempty"`
-	HttpRedirectCode  string `xml:"HttpRedirectCode,omitempty"`
+	ReplaceKeyWith       string `xml:"ReplaceKeyWith,omitempty"`
+	HttpRedirectCode     string `xml:"HttpRedirectCode,omitempty"`
 }
 
 // ToXML converts config to XML
 func (c *Config) ToXML() (string, error) {
-	data, err := xml.MarshalIndent(c, "", "  ")
+	data, err := xmlMarshalIndent(c, "", "  ")
 	if err != nil {
 		return "", err
 	}
@@ -208,9 +210,9 @@ func (b *StaticWebsiteBuilder) WithWWWRedirect() *StaticWebsiteBuilder {
 			KeyPrefixEquals: "",
 		},
 		Redirect: &Redirect{
-			HostName:           "www.example.com",
-			HttpRedirectCode:   "301",
-			Protocol:           "https",
+			HostName:         "www.example.com",
+			HttpRedirectCode: "301",
+			Protocol:         "https",
 		},
 	}
 	b.config.RoutingRules = append(b.config.RoutingRules, rule)

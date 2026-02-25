@@ -66,7 +66,7 @@ func (ts *TagSet) Delete(key string) {
 // Tagging represents object tagging
 type Tagging struct {
 	XMLName xml.Name `xml:"Tagging"`
-	TagSet  TagSet  `xml:"TagSet>Tag"`
+	TagSet  TagSet   `xml:"TagSet>Tag"`
 }
 
 // ToXML converts tagging to XML
@@ -100,16 +100,16 @@ func FromXML(data []byte) (*Tagging, error) {
 // TagValidator validates tags
 type TagValidator struct {
 	maxTagsPerResource int
-	maxKeyLength      int
-	maxValueLength    int
+	maxKeyLength       int
+	maxValueLength     int
 }
 
 // NewTagValidator creates a new tag validator
 func NewTagValidator() *TagValidator {
 	return &TagValidator{
 		maxTagsPerResource: 10,
-		maxKeyLength:      128,
-		maxValueLength:   256,
+		maxKeyLength:       128,
+		maxValueLength:     256,
 	}
 }
 
@@ -179,13 +179,16 @@ func EscapeXML(s string) string {
 
 // ReplaceAll replaces all occurrences
 func ReplaceAll(s, old, new string) string {
-	result := s
+	result := ""
+	remaining := s
 	for {
-		idx := findIndex(result, old)
+		idx := findIndex(remaining, old)
 		if idx == -1 {
+			result += remaining
 			break
 		}
-		result = result[:idx] + new + result[idx+len(old):]
+		result += remaining[:idx] + new
+		remaining = remaining[idx+len(old):]
 	}
 	return result
 }

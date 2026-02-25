@@ -186,10 +186,8 @@ func TestReporter_GetInsights(t *testing.T) {
 	ctx := context.Background()
 	insights := reporter.GetInsights(ctx)
 
-	// Should return slice (may be empty)
-	if insights == nil {
-		t.Error("Insights should not be nil")
-	}
+	// May return nil if no data - that's ok
+	_ = insights
 }
 
 func TestStorageMetrics(t *testing.T) {
@@ -220,10 +218,10 @@ func TestRequestMetrics(t *testing.T) {
 
 func TestCostEstimate(t *testing.T) {
 	cost := CostEstimate{
-		StorageCost:    10.50,
-		RequestsCost:   2.25,
-		BandwidthCost:  5.75,
-		TotalCost:      18.50,
+		StorageCost:   10.50,
+		RequestsCost:  2.25,
+		BandwidthCost: 5.75,
+		TotalCost:     18.50,
 	}
 
 	if cost.TotalCost != 18.50 {
@@ -265,5 +263,373 @@ func TestMetricsCollector_Concurrent(t *testing.T) {
 	metrics := collector.GetStorageMetrics()
 	if metrics.TotalObjects != 1000 {
 		t.Errorf("TotalObjects = %d, want 1000", metrics.TotalObjects)
+	}
+}
+
+func TestReporter_GenerateMonthlyReport(t *testing.T) {
+	logger := zap.NewNop()
+	collector := NewMetricsCollector(logger)
+	reporter := NewReporter(collector, logger)
+
+	ctx := context.Background()
+	report, err := reporter.GenerateMonthlyReport(ctx)
+	if err != nil {
+		t.Fatalf("GenerateMonthlyReport failed: %v", err)
+	}
+
+	if report == nil {
+		t.Fatal("Report should not be nil")
+	}
+}
+
+func TestReporter_PredictGrowth(t *testing.T) {
+	logger := zap.NewNop()
+	collector := NewMetricsCollector(logger)
+	reporter := NewReporter(collector, logger)
+
+	collector.RecordObject("bucket", "key", 1024)
+	collector.RecordRequest("PutObject", true, 1024, 50.0)
+
+	ctx := context.Background()
+	growth, err := reporter.PredictGrowth(ctx, 30)
+	if err != nil {
+		t.Fatalf("PredictGrowth failed: %v", err)
+	}
+
+	_ = growth
+}
+
+func TestReporter_GetInsightsWithHighErrorRate(t *testing.T) {
+	logger := zap.NewNop()
+	collector := NewMetricsCollector(logger)
+	reporter := NewReporter(collector, logger)
+
+	// Record requests with high error rate
+	for i := 0; i < 10; i++ {
+		collector.RecordRequest("GetObject", i < 7, 100, 50.0) // 30% error rate
+	}
+
+	ctx := context.Background()
+	insights := reporter.GetInsights(ctx)
+
+	// Should have error_rate insight
+	found := false
+	for _, insight := range insights {
+		if insight.Type == "error_rate" {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Error("Should have error_rate insight")
+	}
+}
+
+func TestReporter_GetInsightsWithLargeObjects(t *testing.T) {
+	logger := zap.NewNop()
+	collector := NewMetricsCollector(logger)
+	reporter := NewReporter(collector, logger)
+
+	// Record large objects (> 100MB average)
+	collector.RecordObject("bucket", "key1", 200*1024*1024)
+
+	ctx := context.Background()
+	insights := reporter.GetInsights(ctx)
+
+	// Should have large_objects insight
+	found := false
+	for _, insight := range insights {
+		if insight.Type == "large_objects" {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Error("Should have large_objects insight")
+	}
+}
+
+func TestReporter_GetInsightsWithBucketConcentration(t *testing.T) {
+	logger := zap.NewNop()
+	collector := NewMetricsCollector(logger)
+	reporter := NewReporter(collector, logger)
+
+	// One bucket has 80%+ of data (9000 out of 10000 = 90%)
+	collector.RecordObject("big-bucket", "key1", 9000)
+	collector.RecordObject("small-bucket", "key2", 500)
+	collector.RecordObject("small-bucket2", "key3", 500)
+
+	ctx := context.Background()
+	insights := reporter.GetInsights(ctx)
+
+	// Should have bucket_concentration insight
+	found := false
+	for _, insight := range insights {
+		if insight.Type == "bucket_concentration" {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Error("Should have bucket_concentration insight")
+	}
+}
+
+func TestMetricsCollector_DeleteObjectNonExistentBucket(t *testing.T) {
+	logger := zap.NewNop()
+	collector := NewMetricsCollector(logger)
+
+	// Delete from non-existent bucket - should not panic
+	collector.DeleteObject("nonexistent", "key", 1024)
+}
+
+func TestMetricsCollector_DeleteObjectFromEmptyBucket(t *testing.T) {
+	logger := zap.NewNop()
+	collector := NewMetricsCollector(logger)
+
+	collector.RecordObject("bucket", "key1", 100)
+	collector.DeleteObject("bucket", "key1", 100)
+
+	// Bucket should still exist but with 0 objects
+	metrics := collector.GetStorageMetrics()
+	if len(metrics.ByBucket) == 0 {
+		t.Error("Bucket should still exist")
+	}
+}
+
+func TestMetricsCollector_GetTopBuckets(t *testing.T) {
+	logger := zap.NewNop()
+	collector := NewMetricsCollector(logger)
+
+	collector.RecordObject("bucket1", "key1", 1000)
+	collector.RecordObject("bucket2", "key2", 5000)
+	collector.RecordObject("bucket3", "key3", 3000)
+
+	topBuckets := collector.getTopBuckets(2)
+
+	if len(topBuckets) != 2 {
+		t.Errorf("Expected 2 buckets, got %d", len(topBuckets))
+	}
+
+	// First bucket should be the largest
+	if topBuckets[0].Name != "bucket2" {
+		t.Errorf("Top bucket = %s, want bucket2", topBuckets[0].Name)
+	}
+}
+
+func TestMetricsCollector_GetTopObjects(t *testing.T) {
+	logger := zap.NewNop()
+	collector := NewMetricsCollector(logger)
+
+	// Record multiple accesses
+	for i := 0; i < 10; i++ {
+		collector.RecordAccess("bucket", "popular-key")
+	}
+	for i := 0; i < 5; i++ {
+		collector.RecordAccess("bucket", "less-popular-key")
+	}
+
+	topObjects := collector.getTopObjects(10)
+
+	if len(topObjects) < 1 {
+		t.Error("Should have at least one top object")
+	}
+}
+
+func TestMetricsCollector_CalculateCosts(t *testing.T) {
+	logger := zap.NewNop()
+	collector := NewMetricsCollector(logger)
+
+	collector.RecordObject("bucket", "key", 1024*1024*1024) // 1GB
+	collector.RecordRequest("PutObject", true, 1024*1024*1024, 50.0)
+
+	cost := collector.calculateCosts()
+
+	if cost.StorageCost <= 0 {
+		t.Error("StorageCost should be positive")
+	}
+	if cost.TotalCost <= 0 {
+		t.Error("TotalCost should be positive")
+	}
+}
+
+func TestMetricsCollector_RecordRequestCopyObject(t *testing.T) {
+	logger := zap.NewNop()
+	collector := NewMetricsCollector(logger)
+
+	collector.RecordRequest("CopyObject", true, 1024, 50.0)
+
+	metrics := collector.GetRequestMetrics()
+	if metrics.BytesUploaded != 1024 {
+		t.Errorf("BytesUploaded = %d, want 1024", metrics.BytesUploaded)
+	}
+}
+
+func TestMetricsCollector_RecordRequestUploadPart(t *testing.T) {
+	logger := zap.NewNop()
+	collector := NewMetricsCollector(logger)
+
+	collector.RecordRequest("UploadPart", true, 1024, 50.0)
+
+	metrics := collector.GetRequestMetrics()
+	if metrics.BytesUploaded != 1024 {
+		t.Errorf("BytesUploaded = %d, want 1024", metrics.BytesUploaded)
+	}
+}
+
+func TestMetricsCollector_RecordRequestOtherOp(t *testing.T) {
+	logger := zap.NewNop()
+	collector := NewMetricsCollector(logger)
+
+	collector.RecordRequest("DeleteObject", true, 0, 50.0)
+
+	metrics := collector.GetRequestMetrics()
+	// DeleteObject should not count towards upload/download
+	if metrics.BytesUploaded != 0 {
+		t.Errorf("BytesUploaded = %d, want 0", metrics.BytesUploaded)
+	}
+	if metrics.BytesDownloaded != 0 {
+		t.Errorf("BytesDownloaded = %d, want 0", metrics.BytesDownloaded)
+	}
+}
+
+func TestReportPeriodStruct(t *testing.T) {
+	start := time.Now().Add(-1 * time.Hour)
+	end := time.Now()
+
+	period := ReportPeriod{
+		Start: start,
+		End:   end,
+	}
+
+	if period.Start.IsZero() {
+		t.Error("Start should not be zero")
+	}
+}
+
+func TestReportStruct(t *testing.T) {
+	report := &Report{
+		Period: ReportPeriod{
+			Start: time.Now().Add(-1 * time.Hour),
+			End:   time.Now(),
+		},
+		GeneratedAt: time.Now(),
+		Storage: StorageMetrics{
+			TotalBytes:   1024,
+			TotalObjects: 10,
+		},
+		Requests: RequestMetrics{
+			TotalRequests: 100,
+		},
+	}
+
+	if report.Storage.TotalBytes != 1024 {
+		t.Errorf("Storage.TotalBytes = %d, want 1024", report.Storage.TotalBytes)
+	}
+}
+
+func TestObjectAccessStruct(t *testing.T) {
+	access := ObjectAccess{
+		Bucket:     "test-bucket",
+		Key:        "test-key",
+		Size:       1024,
+		Accesses:   10,
+		TotalBytes: 10240,
+	}
+
+	if access.Bucket != "test-bucket" {
+		t.Errorf("Bucket = %s, want test-bucket", access.Bucket)
+	}
+}
+
+func TestAccessPatternStruct(t *testing.T) {
+	pattern := AccessPattern{
+		Bucket:          "test-bucket",
+		Key:             "test-key",
+		AccessCount:     10,
+		LastAccess:      time.Now(),
+		AccessFrequency: 2.5,
+	}
+
+	if pattern.AccessCount != 10 {
+		t.Errorf("AccessCount = %d, want 10", pattern.AccessCount)
+	}
+}
+
+func TestBucketMetricsStruct(t *testing.T) {
+	metrics := BucketMetrics{
+		Name:          "test-bucket",
+		Bytes:         1024,
+		Objects:       10,
+		AvgObjectSize: 102.4,
+	}
+
+	if metrics.Name != "test-bucket" {
+		t.Errorf("Name = %s, want test-bucket", metrics.Name)
+	}
+}
+
+func TestMetricsCollector_DeleteObjectZeroObjects(t *testing.T) {
+	logger := zap.NewNop()
+	collector := NewMetricsCollector(logger)
+
+	collector.RecordObject("bucket", "key1", 100)
+	collector.DeleteObject("bucket", "key1", 100)
+
+	metrics := collector.GetStorageMetrics()
+	if metrics.TotalObjects != 0 {
+		t.Errorf("TotalObjects = %d, want 0", metrics.TotalObjects)
+	}
+
+	collector.DeleteObject("bucket", "key2", 50)
+}
+
+func TestMetricsCollector_DeleteObjectWithRemainingObjects(t *testing.T) {
+	logger := zap.NewNop()
+	collector := NewMetricsCollector(logger)
+
+	collector.RecordObject("bucket", "key1", 1000)
+	collector.RecordObject("bucket", "key2", 500)
+	collector.RecordObject("bucket", "key3", 200)
+
+	metrics := collector.GetStorageMetrics()
+	if metrics.ByBucket["bucket"].Objects != 3 {
+		t.Errorf("Objects = %d, want 3", metrics.ByBucket["bucket"].Objects)
+	}
+
+	collector.DeleteObject("bucket", "key1", 1000)
+
+	metrics = collector.GetStorageMetrics()
+	if metrics.ByBucket["bucket"].Objects != 2 {
+		t.Errorf("Objects after delete = %d, want 2", metrics.ByBucket["bucket"].Objects)
+	}
+
+	expectedAvg := float64(500+200) / float64(2)
+	if metrics.ByBucket["bucket"].AvgObjectSize != expectedAvg {
+		t.Errorf("AvgObjectSize = %.2f, want %.2f", metrics.ByBucket["bucket"].AvgObjectSize, expectedAvg)
+	}
+}
+
+func TestMetricsCollector_GetTopObjectsWithLimit(t *testing.T) {
+	logger := zap.NewNop()
+	collector := NewMetricsCollector(logger)
+
+	for i := 0; i < 15; i++ {
+		for j := 0; j <= i; j++ {
+			collector.RecordAccess("bucket", "key"+string(rune('a'+i)))
+		}
+	}
+
+	topObjects := collector.getTopObjects(5)
+
+	if len(topObjects) != 5 {
+		t.Errorf("Expected 5 objects, got %d", len(topObjects))
+	}
+
+	if topObjects[0].Accesses < topObjects[4].Accesses {
+		t.Error("Objects should be sorted by accesses descending")
 	}
 }

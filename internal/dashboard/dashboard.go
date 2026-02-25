@@ -104,7 +104,7 @@ func clusterHandler(clusterInfo interface {
 			response := map[string]interface{}{
 				"replicationFactor": replicationFactor,
 				"totalStorage":      int64(0),
-				"nodes":            nodes,
+				"nodes":             nodes,
 			}
 
 			json.NewEncoder(w).Encode(response)
@@ -175,11 +175,16 @@ func apiStatusHandler(w http.ResponseWriter, r *http.Request) {
 	defer resp.Body.Close()
 
 	var status map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&status)
+	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+		status = make(map[string]interface{})
+	}
+	if status == nil {
+		status = make(map[string]interface{})
+	}
 
 	status["timestamp"] = map[string]interface{}{
 		"seconds": 1728000000,
-		"nanos":  0,
+		"nanos":   0,
 	}
 
 	json.NewEncoder(w).Encode(status)

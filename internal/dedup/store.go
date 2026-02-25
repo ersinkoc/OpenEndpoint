@@ -18,11 +18,12 @@ type Fingerprint string
 
 // Store stores fingerprints and references
 type Store struct {
-	logger      *zap.Logger
-	mu          sync.RWMutex
+	logger       *zap.Logger
+	mu           sync.RWMutex
 	fingerprints map[Fingerprint]*FingerprintInfo
-	deduped     int64
-	spaceSaved  int64
+	deduped      int64
+	spaceSaved   int64
+	addObjectErr error
 }
 
 // FingerprintInfo contains information about a fingerprint
@@ -43,9 +44,14 @@ type ObjectRef struct {
 // NewStore creates a new deduplication store
 func NewStore(logger *zap.Logger) *Store {
 	return &Store{
-		logger:      logger,
+		logger:       logger,
 		fingerprints: make(map[Fingerprint]*FingerprintInfo),
 	}
+}
+
+// SetAddObjectError sets an error to be returned by AddObject (for testing)
+func (s *Store) SetAddObjectError(err error) {
+	s.addObjectErr = err
 }
 
 // ComputeFingerprint computes the fingerprint of data
@@ -79,6 +85,9 @@ func ComputeFingerprintFromReader(r io.Reader) (Fingerprint, int64, error) {
 
 // AddObject adds an object to the dedup store
 func (s *Store) AddObject(bucket, key string, data []byte) (Fingerprint, bool, error) {
+	if s.addObjectErr != nil {
+		return "", false, s.addObjectErr
+	}
 	fp := ComputeFingerprint(data)
 	size := int64(len(data))
 
@@ -176,8 +185,8 @@ func (s *Store) GetStats() Stats {
 	}
 
 	return Stats{
-		TotalObjects:      totalObjects,
-		UniqueObjects:     int64(len(s.fingerprints)),
+		TotalObjects:     totalObjects,
+		UniqueObjects:    int64(len(s.fingerprints)),
 		DuplicateObjects: duplicateObjects,
 		SpaceSaved:       s.spaceSaved,
 		DedupRatio:       dedupRatio,
@@ -186,11 +195,11 @@ func (s *Store) GetStats() Stats {
 
 // Stats contains deduplication statistics
 type Stats struct {
-	TotalObjects      int64   `json:"total_objects"`
-	UniqueObjects     int64   `json:"unique_objects"`
-	DuplicateObjects  int64   `json:"duplicate_objects"`
-	SpaceSaved        int64   `json:"space_saved_bytes"`
-	DedupRatio        float64 `json:"dedup_ratio_percent"`
+	TotalObjects     int64   `json:"total_objects"`
+	UniqueObjects    int64   `json:"unique_objects"`
+	DuplicateObjects int64   `json:"duplicate_objects"`
+	SpaceSaved       int64   `json:"space_saved_bytes"`
+	DedupRatio       float64 `json:"dedup_ratio_percent"`
 }
 
 // Deduplicator provides deduplication at read/write time
@@ -215,9 +224,9 @@ func (d *Deduplicator) ProcessWrite(ctx context.Context, bucket, key string, dat
 	}
 
 	return &WriteResult{
-		Fingerprint: fp,
+		Fingerprint:  fp,
 		Deduplicated: deduped,
-		Size:        int64(len(data)),
+		Size:         int64(len(data)),
 	}, nil
 }
 

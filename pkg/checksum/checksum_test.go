@@ -2,7 +2,9 @@ package checksum
 
 import (
 	"bytes"
+	"errors"
 	"hash"
+	"io"
 	"testing"
 )
 
@@ -95,12 +97,12 @@ func TestHashBytes(t *testing.T) {
 		algorithm string
 		wantLen   int
 	}{
-		{"md5", 32},      // hex encoded = 16 bytes * 2
-		{"sha1", 40},     // 20 * 2
-		{"sha256", 64},   // 32 * 2
-		{"sha512", 128},  // 64 * 2
-		{"crc32", 8},     // 4 * 2
-		{"unknown", 64},  // defaults to sha256
+		{"md5", 32},     // hex encoded = 16 bytes * 2
+		{"sha1", 40},    // 20 * 2
+		{"sha256", 64},  // 32 * 2
+		{"sha512", 128}, // 64 * 2
+		{"crc32", 8},    // 4 * 2
+		{"unknown", 64}, // defaults to sha256
 	}
 
 	for _, tt := range tests {
@@ -175,6 +177,35 @@ func TestHashReader_Empty(t *testing.T) {
 	}
 }
 
+type errorReader struct{}
+
+func (e *errorReader) Read(p []byte) (n int, err error) {
+	return 0, errors.New("read error")
+}
+
+func TestHashReader_Error(t *testing.T) {
+	reader := &errorReader{}
+
+	hash, size, err := HashReader(reader)
+	if err == nil {
+		t.Fatal("Expected error from HashReader")
+	}
+
+	if err.Error() != "read error" {
+		t.Errorf("Error = %v, want 'read error'", err)
+	}
+
+	if hash != "" {
+		t.Errorf("Hash = %s, want empty string", hash)
+	}
+
+	if size != 0 {
+		t.Errorf("Size = %d, want 0", size)
+	}
+
+	var _ io.Reader = &errorReader{}
+}
+
 func TestHashToBase64(t *testing.T) {
 	data := []byte("test data")
 
@@ -229,17 +260,17 @@ func TestVerifyETag(t *testing.T) {
 	etag := ETag(hash)
 
 	tests := []struct {
-		etag      string
-		hash      string
-		expected  bool
+		etag     string
+		hash     string
+		expected bool
 	}{
-		{etag, hash, true},                    // Exact match
-		{"abc123", hash, true},                // Without quotes
-		{"\"abc123\"", hash, true},            // With quotes
-		{"W/\"abc123\"", hash, true},          // Weak ETag
-		{"\"different\"", hash, false},        // Different hash
-		{"", hash, false},                     // Empty etag
-		{etag, "different", false},            // Different hash
+		{etag, hash, true},             // Exact match
+		{"abc123", hash, true},         // Without quotes
+		{"\"abc123\"", hash, true},     // With quotes
+		{"W/\"abc123\"", hash, true},   // Weak ETag
+		{"\"different\"", hash, false}, // Different hash
+		{"", hash, false},              // Empty etag
+		{etag, "different", false},     // Different hash
 	}
 
 	for _, tt := range tests {
@@ -269,7 +300,7 @@ func TestCRC32Checksum(t *testing.T) {
 	}{
 		{[]byte("hello world"), 0xd4a1185},
 		{[]byte{}, 0x0},
-		{[]byte("test"), 0xd39f6367},
+		{[]byte("test"), 0xd87f7e0c}, // Fixed: standard CRC32 for "test"
 	}
 
 	for _, tt := range tests {

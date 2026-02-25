@@ -89,10 +89,11 @@ This release marks the completion of the **complete OpenEndpoint vision** includ
 
 | Metric | Value |
 |--------|-------|
-| Total Tests | 527 test functions |
-| Test Files | 38 files |
-| Test Lines | 11,000+ |
-| Package Coverage | 100% (38 packages) |
+| Total Tests | 600+ test functions |
+| Test Files | 50+ files |
+| Test Lines | 15,000+ |
+| Package Coverage | 90%+ (49 packages) |
+| Test Success Rate | 100% |
 | Security Fixes | 23 |
 
 ### Known Limitations
@@ -131,7 +132,7 @@ docker run -d \
 curl -sL https://github.com/openendpoint/openendpoint/releases/download/v1.0.0/openep-linux-amd64.tar.gz | tar xz
 
 # Run
-./openep serve --config config.yaml
+./openep server --config config.yaml
 ```
 
 ### Quick Start

@@ -11,52 +11,52 @@ import (
 
 // Config manages bucket configuration
 type Config struct {
-	mu           sync.RWMutex
-	buckets      map[string]*BucketConfig
-	versioning   map[string]*VersioningConfig
-	cors         map[string]*CORSConfig
-	policies     map[string]*BucketPolicy
-	objectLock   map[string]*ObjectLockConfig
-	tags         map[string]map[string]string
+	mu         sync.RWMutex
+	buckets    map[string]*BucketConfig
+	versioning map[string]*VersioningConfig
+	cors       map[string]*CORSConfig
+	policies   map[string]*BucketPolicy
+	objectLock map[string]*ObjectLockConfig
+	tags       map[string]map[string]string
 }
 
 // BucketConfig represents bucket configuration
 type BucketConfig struct {
-	Name                string            `json:"name" yaml:"name"`
-	CreationDate        time.Time         `json:"creationDate" yaml:"creationDate"`
-	Location            string            `json:"location" yaml:"location"`
-	Owner               string            `json:"owner" yaml:"owner"`
-	EndpointType        string            `json:"endpointType" yaml:"endpointType"`
-	AccelerateConfig    string            `json:"accelerateConfig" yaml:"accelerateConfig"`
-	Policy              *BucketPolicy     `json:"policy,omitempty" yaml:"policy,omitempty"`
-	Tags                map[string]string `json:"tags,omitempty" yaml:"tags,omitempty"`
+	Name             string            `json:"name" yaml:"name"`
+	CreationDate     time.Time         `json:"creationDate" yaml:"creationDate"`
+	Location         string            `json:"location" yaml:"location"`
+	Owner            string            `json:"owner" yaml:"owner"`
+	EndpointType     string            `json:"endpointType" yaml:"endpointType"`
+	AccelerateConfig string            `json:"accelerateConfig" yaml:"accelerateConfig"`
+	Policy           *BucketPolicy     `json:"policy,omitempty" yaml:"policy,omitempty"`
+	Tags             map[string]string `json:"tags,omitempty" yaml:"tags,omitempty"`
 }
 
 // VersioningConfig represents bucket versioning configuration
 type VersioningConfig struct {
-	Status          string    `json:"status" yaml:"status"` // Enabled, Suspended, Disabled
-	MFADelete       string    `json:"mfaDelete" yaml:"mfaDelete"` // Enabled, Disabled
-	ModifiedDate    time.Time `json:"modifiedDate" yaml:"modifiedDate"`
+	Status       string    `json:"status" yaml:"status"`       // Enabled, Suspended, Disabled
+	MFADelete    string    `json:"mfaDelete" yaml:"mfaDelete"` // Enabled, Disabled
+	ModifiedDate time.Time `json:"modifiedDate" yaml:"modifiedDate"`
 }
 
 // VersionInfo represents version information for an object
 type VersionInfo struct {
-	VersionID     string    `json:"versionId" yaml:"versionId"`
-	IsLatest      bool      `json:"isLatest" yaml:"isLatest"`
-	Key           string    `json:"key" yaml:"key"`
-	Size          int64     `json:"size" yaml:"size"`
-	ETag          string    `json:"etag" yaml:"etag"`
-	LastModified  time.Time `json:"lastModified" yaml:"lastModified"`
-	StorageClass  string    `json:"storageClass" yaml:"storageClass"`
-	Owner         string    `json:"owner" yaml:"owner"`
-	IsDeleteMarker bool     `json:"isDeleteMarker" yaml:"isDeleteMarker"`
+	VersionID      string    `json:"versionId" yaml:"versionId"`
+	IsLatest       bool      `json:"isLatest" yaml:"isLatest"`
+	Key            string    `json:"key" yaml:"key"`
+	Size           int64     `json:"size" yaml:"size"`
+	ETag           string    `json:"etag" yaml:"etag"`
+	LastModified   time.Time `json:"lastModified" yaml:"lastModified"`
+	StorageClass   string    `json:"storageClass" yaml:"storageClass"`
+	Owner          string    `json:"owner" yaml:"owner"`
+	IsDeleteMarker bool      `json:"isDeleteMarker" yaml:"isDeleteMarker"`
 }
 
 // CORSConfig represents CORS configuration
 type CORSConfig struct {
-	Bucket      string     `json:"bucket" yaml:"bucket"`
-	CORSRules   []*CORSRule `json:"corsRules" yaml:"corsRules"`
-	ModifiedAt  time.Time  `json:"modifiedAt" yaml:"modifiedAt"`
+	Bucket     string      `json:"bucket" yaml:"bucket"`
+	CORSRules  []*CORSRule `json:"corsRules" yaml:"corsRules"`
+	ModifiedAt time.Time   `json:"modifiedAt" yaml:"modifiedAt"`
 }
 
 // CORSRule represents a CORS rule
@@ -71,43 +71,43 @@ type CORSRule struct {
 
 // BucketPolicy represents a bucket policy
 type BucketPolicy struct {
-	Version      string           `json:"version" yaml:"version"`
-	ID           string           `json:"id,omitempty" yaml:"id,omitempty"`
+	Version      string             `json:"version" yaml:"version"`
+	ID           string             `json:"id,omitempty" yaml:"id,omitempty"`
 	Statement    []*PolicyStatement `json:"statement" yaml:"statement"`
-	ModifiedDate time.Time        `json:"modifiedDate" yaml:"modifiedDate"`
+	ModifiedDate time.Time          `json:"modifiedDate" yaml:"modifiedDate"`
 }
 
 // PolicyStatement represents a policy statement
 type PolicyStatement struct {
-	Sid        string      `json:"sid,omitempty" yaml:"sid,omitempty"`
-	Effect     string      `json:"effect" yaml:"effect"` // Allow, Deny
-	Principal  interface{} `json:"principal" yaml:"principal"`
-	Action     interface{} `json:"action" yaml:"action"`
-	Resource   interface{} `json:"resource" yaml:"resource"`
-	Condition  interface{} `json:"condition,omitempty" yaml:"condition,omitempty"`
+	Sid       string      `json:"sid,omitempty" yaml:"sid,omitempty"`
+	Effect    string      `json:"effect" yaml:"effect"` // Allow, Deny
+	Principal interface{} `json:"principal" yaml:"principal"`
+	Action    interface{} `json:"action" yaml:"action"`
+	Resource  interface{} `json:"resource" yaml:"resource"`
+	Condition interface{} `json:"condition,omitempty" yaml:"condition,omitempty"`
 }
 
 // ObjectLockConfig represents object lock configuration
 type ObjectLockConfig struct {
-	Enabled          bool   `json:"enabled" yaml:"enabled"`
-	RetentionMode    string `json:"retentionMode" yaml:"retentionMode"` // Governance, Compliance
-	RetentionDays    int    `json:"retentionDays" yaml:"retentionDays"`
-	LegalHoldEnabled bool   `json:"legalHoldEnabled" yaml:"legalHoldEnabled"`
+	Enabled          bool      `json:"enabled" yaml:"enabled"`
+	RetentionMode    string    `json:"retentionMode" yaml:"retentionMode"` // Governance, Compliance
+	RetentionDays    int       `json:"retentionDays" yaml:"retentionDays"`
+	LegalHoldEnabled bool      `json:"legalHoldEnabled" yaml:"legalHoldEnabled"`
 	ModifiedDate     time.Time `json:"modifiedDate" yaml:"modifiedDate"`
 }
 
 // ObjectLockRetention represents object lock retention
 type ObjectLockRetention struct {
-	Mode          string    `json:"mode" yaml:"mode"`
-	RetainUntil   time.Time `json:"retainUntil" yaml:"retainUntil"`
-	RetainedBy    string    `json:"retainedBy" yaml:"retainedBy"`
-	CreatedAt     time.Time `json:"createdAt" yaml:"createdAt"`
+	Mode        string    `json:"mode" yaml:"mode"`
+	RetainUntil time.Time `json:"retainUntil" yaml:"retainUntil"`
+	RetainedBy  string    `json:"retainedBy" yaml:"retainedBy"`
+	CreatedAt   time.Time `json:"createdAt" yaml:"createdAt"`
 }
 
 // ObjectLockLegalHold represents legal hold status
 type ObjectLockLegalHold struct {
-	Status   string    `json:"status" yaml:"status"` // ON, OFF
-	AppliedBy string   `json:"appliedBy" yaml:"appliedBy"`
+	Status    string    `json:"status" yaml:"status"` // ON, OFF
+	AppliedBy string    `json:"appliedBy" yaml:"appliedBy"`
 	AppliedAt time.Time `json:"appliedAt" yaml:"appliedAt"`
 }
 
@@ -402,18 +402,18 @@ func (c *Config) ToJSON(bucket string) ([]byte, error) {
 	return json.MarshalIndent(result, "", "  ")
 }
 
-// GenerateVersionID generates a version ID
-func GenerateVersionID() string {
-	return fmt.Sprintf("%d-%s", time.Now().UnixNano(), generateRandomID())
-}
+var randRead = rand.Read
 
 func generateRandomID() string {
 	b := make([]byte, 4)
-	if _, err := rand.Read(b); err != nil {
-		// Fallback to timestamp-based ID if crypto/rand fails
+	if _, err := randRead(b); err != nil {
 		return fmt.Sprintf("%08x", time.Now().UnixNano()&0xFFFFFFFF)
 	}
 	return hex.EncodeToString(b)
+}
+
+func GenerateVersionID() string {
+	return fmt.Sprintf("%d-%s", time.Now().UnixNano(), generateRandomID())
 }
 
 // GetPolicyJSON returns policy as JSON string

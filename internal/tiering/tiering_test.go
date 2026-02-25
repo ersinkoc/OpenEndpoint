@@ -1,260 +1,662 @@
 package tiering
 
 import (
+	"context"
 	"testing"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 func TestNewManager(t *testing.T) {
-	config := &Config{
-		Tiers: []TierConfig{
-			{Name: "STANDARD", Backend: "local"},
-			{Name: "GLACIER", Backend: "local"},
-		},
-	}
-
-	mgr, err := NewManager(config)
-	if err != nil {
-		t.Fatalf("NewManager failed: %v", err)
-	}
-
+	logger := zap.NewNop()
+	mgr := NewManager(logger)
 	if mgr == nil {
 		t.Fatal("Manager should not be nil")
 	}
+	if mgr.policies == nil {
+		t.Error("policies map should be initialized")
+	}
+	if mgr.tierUsage == nil {
+		t.Error("tierUsage map should be initialized")
+	}
+	if mgr.objectTiers == nil {
+		t.Error("objectTiers map should be initialized")
+	}
 }
 
-func TestManager_GetTier(t *testing.T) {
-	config := &Config{
-		Tiers: []TierConfig{
-			{Name: "STANDARD", Backend: "local"},
-			{Name: "GLACIER", Backend: "local"},
-		},
+func TestNewAnalyzer(t *testing.T) {
+	logger := zap.NewNop()
+	analyzer := NewAnalyzer(logger)
+	if analyzer == nil {
+		t.Fatal("Analyzer should not be nil")
+	}
+}
+
+func TestTierConstants(t *testing.T) {
+	if TierHot != "hot" {
+		t.Errorf("TierHot = %v, want hot", TierHot)
+	}
+	if TierWarm != "warm" {
+		t.Errorf("TierWarm = %v, want warm", TierWarm)
+	}
+	if TierCold != "cold" {
+		t.Errorf("TierCold = %v, want cold", TierCold)
+	}
+	if TierGlacier != "glacier" {
+		t.Errorf("TierGlacier = %v, want glacier", TierGlacier)
+	}
+}
+
+func TestDefaultTierConfigs(t *testing.T) {
+	configs := DefaultTierConfigs()
+	if len(configs) != 4 {
+		t.Errorf("len(DefaultTierConfigs()) = %d, want 4", len(configs))
 	}
 
-	mgr, _ := NewManager(config)
+	for i, cfg := range configs {
+		if cfg.Priority != i {
+			t.Errorf("config[%d].Priority = %d, want %d", i, cfg.Priority, i)
+		}
+	}
+}
 
-	tier, err := mgr.GetTier("STANDARD")
+func TestCreatePolicy(t *testing.T) {
+	logger := zap.NewNop()
+	mgr := NewManager(logger)
+
+	policy, err := mgr.CreatePolicy("test-policy", "test-bucket", "prefix/")
 	if err != nil {
-		t.Fatalf("GetTier failed: %v", err)
+		t.Fatalf("CreatePolicy failed: %v", err)
 	}
 
-	if tier.Name != "STANDARD" {
-		t.Errorf("Tier name = %s, want STANDARD", tier.Name)
+	if policy.ID == "" {
+		t.Error("policy ID should not be empty")
+	}
+	if policy.Name != "test-policy" {
+		t.Errorf("Name = %v, want test-policy", policy.Name)
+	}
+	if policy.Bucket != "test-bucket" {
+		t.Errorf("Bucket = %v, want test-bucket", policy.Bucket)
+	}
+	if policy.Prefix != "prefix/" {
+		t.Errorf("Prefix = %v, want prefix/", policy.Prefix)
+	}
+	if !policy.Enabled {
+		t.Error("policy should be enabled by default")
+	}
+	if len(policy.TierConfigs) != 4 {
+		t.Errorf("len(TierConfigs) = %d, want 4", len(policy.TierConfigs))
 	}
 }
 
-func TestManager_GetTier_NotFound(t *testing.T) {
-	config := &Config{
-		Tiers: []TierConfig{
-			{Name: "STANDARD", Backend: "local"},
-		},
+func TestGetPolicy(t *testing.T) {
+	logger := zap.NewNop()
+	mgr := NewManager(logger)
+
+	policy, _ := mgr.CreatePolicy("test-policy", "test-bucket", "")
+
+	got, ok := mgr.GetPolicy(policy.ID)
+	if !ok {
+		t.Fatal("GetPolicy should return ok=true")
 	}
-
-	mgr, _ := NewManager(config)
-
-	_, err := mgr.GetTier("NON_EXISTENT")
-	if err == nil {
-		t.Error("GetTier should fail for non-existent tier")
+	if got.ID != policy.ID {
+		t.Errorf("ID = %v, want %v", got.ID, policy.ID)
 	}
 }
 
-func TestManager_TransitionObject(t *testing.T) {
-	config := &Config{
-		Tiers: []TierConfig{
-			{Name: "STANDARD", Backend: "local"},
-			{Name: "GLACIER", Backend: "local"},
-		},
+func TestGetPolicyNotFound(t *testing.T) {
+	logger := zap.NewNop()
+	mgr := NewManager(logger)
+
+	_, ok := mgr.GetPolicy("nonexistent")
+	if ok {
+		t.Error("GetPolicy should return ok=false for nonexistent policy")
+	}
+}
+
+func TestListPolicies(t *testing.T) {
+	logger := zap.NewNop()
+	mgr := NewManager(logger)
+
+	mgr.CreatePolicy("policy1", "bucket1", "")
+	mgr.CreatePolicy("policy2", "bucket2", "")
+
+	policies := mgr.ListPolicies()
+	if len(policies) != 2 {
+		t.Errorf("len(policies) = %d, want 2", len(policies))
+	}
+}
+
+func TestListPoliciesEmpty(t *testing.T) {
+	logger := zap.NewNop()
+	mgr := NewManager(logger)
+
+	policies := mgr.ListPolicies()
+	if len(policies) != 0 {
+		t.Errorf("len(policies) = %d, want 0", len(policies))
+	}
+}
+
+func TestUpdateObjectTier(t *testing.T) {
+	logger := zap.NewNop()
+	mgr := NewManager(logger)
+
+	mgr.UpdateObjectTier("bucket", "key", TierHot)
+
+	tier, ok := mgr.GetObjectTier("bucket", "key")
+	if !ok {
+		t.Fatal("GetObjectTier should return ok=true")
+	}
+	if tier != TierHot {
+		t.Errorf("tier = %v, want hot", tier)
+	}
+}
+
+func TestUpdateObjectTierChange(t *testing.T) {
+	logger := zap.NewNop()
+	mgr := NewManager(logger)
+
+	mgr.UpdateObjectTier("bucket", "key", TierHot)
+	mgr.UpdateObjectTier("bucket", "key", TierCold)
+
+	tier, _ := mgr.GetObjectTier("bucket", "key")
+	if tier != TierCold {
+		t.Errorf("tier = %v, want cold", tier)
+	}
+}
+
+func TestGetObjectTierNotFound(t *testing.T) {
+	logger := zap.NewNop()
+	mgr := NewManager(logger)
+
+	_, ok := mgr.GetObjectTier("bucket", "nonexistent")
+	if ok {
+		t.Error("GetObjectTier should return ok=false for nonexistent object")
+	}
+}
+
+func TestGetTierUsage(t *testing.T) {
+	logger := zap.NewNop()
+	mgr := NewManager(logger)
+
+	mgr.UpdateObjectTier("bucket", "key1", TierHot)
+	mgr.UpdateObjectTier("bucket", "key2", TierHot)
+	mgr.UpdateObjectTier("bucket", "key3", TierCold)
+
+	usage := mgr.GetTierUsage()
+	if usage[TierHot] != 2 {
+		t.Errorf("usage[hot] = %d, want 2", usage[TierHot])
+	}
+	if usage[TierCold] != 1 {
+		t.Errorf("usage[cold] = %d, want 1", usage[TierCold])
+	}
+}
+
+func TestGetCostEstimate(t *testing.T) {
+	logger := zap.NewNop()
+	mgr := NewManager(logger)
+
+	mgr.UpdateObjectTier("bucket", "key1", TierHot)
+
+	total, tierCosts := mgr.GetCostEstimate()
+
+	if total < 0 {
+		t.Errorf("total = %v, want >= 0", total)
 	}
 
-	mgr, _ := NewManager(config)
+	if len(tierCosts) == 0 {
+		t.Error("tierCosts should not be empty")
+	}
+}
 
-	object := &ObjectInfo{
-		Bucket:    "test-bucket",
-		Key:       "test-key",
-		Size:      1024,
-		Tier:      "STANDARD",
-		UpdatedAt: time.Now(),
+func TestRecommendTierHighAccess(t *testing.T) {
+	logger := zap.NewNop()
+	mgr := NewManager(logger)
+
+	obj := &ObjectInfo{
+		Bucket:      "bucket",
+		Key:         "key",
+		CreatedAt:   time.Now().Add(-1 * time.Hour),
+		AccessCount: 100,
 	}
 
-	err := mgr.TransitionObject(object, "GLACIER")
+	tier := mgr.RecommendTier(obj)
+	if tier != TierHot {
+		t.Errorf("RecommendTier(high access) = %v, want hot", tier)
+	}
+}
+
+func TestRecommendTierModerateAccess(t *testing.T) {
+	logger := zap.NewNop()
+	mgr := NewManager(logger)
+
+	obj := &ObjectInfo{
+		Bucket:      "bucket",
+		Key:         "key",
+		CreatedAt:   time.Now().Add(-10 * time.Hour),
+		AccessCount: 20,
+	}
+
+	tier := mgr.RecommendTier(obj)
+	if tier != TierWarm {
+		t.Errorf("RecommendTier(moderate access) = %v, want warm", tier)
+	}
+}
+
+func TestRecommendTierOld(t *testing.T) {
+	logger := zap.NewNop()
+	mgr := NewManager(logger)
+
+	obj := &ObjectInfo{
+		Bucket:      "bucket",
+		Key:         "key",
+		CreatedAt:   time.Now().Add(-100 * 24 * time.Hour),
+		AccessCount: 1,
+	}
+
+	tier := mgr.RecommendTier(obj)
+	if tier != TierCold {
+		t.Errorf("RecommendTier(old) = %v, want cold", tier)
+	}
+}
+
+func TestRecommendTierVeryOld(t *testing.T) {
+	logger := zap.NewNop()
+	mgr := NewManager(logger)
+
+	obj := &ObjectInfo{
+		Bucket:      "bucket",
+		Key:         "key",
+		CreatedAt:   time.Now().Add(-200 * 24 * time.Hour),
+		AccessCount: 0,
+	}
+
+	tier := mgr.RecommendTier(obj)
+	if tier != TierGlacier {
+		t.Errorf("RecommendTier(very old) = %v, want glacier", tier)
+	}
+}
+
+func TestRecommendTierDefault(t *testing.T) {
+	logger := zap.NewNop()
+	mgr := NewManager(logger)
+
+	obj := &ObjectInfo{
+		Bucket:      "bucket",
+		Key:         "key",
+		CreatedAt:   time.Now().Add(-10 * 24 * time.Hour),
+		AccessCount: 1,
+	}
+
+	tier := mgr.RecommendTier(obj)
+	if tier != TierWarm {
+		t.Errorf("RecommendTier(default) = %v, want warm", tier)
+	}
+}
+
+func TestRecommendTierGlacier(t *testing.T) {
+	logger := zap.NewNop()
+	mgr := NewManager(logger)
+
+	obj := &ObjectInfo{
+		Bucket:      "bucket",
+		Key:         "key",
+		CreatedAt:   time.Now().Add(-365 * 24 * time.Hour),
+		AccessCount: 0,
+	}
+
+	tier := mgr.RecommendTier(obj)
+	if tier != TierGlacier {
+		t.Errorf("RecommendTier(glacier) = %v, want glacier", tier)
+	}
+}
+
+func TestTransitionTier(t *testing.T) {
+	logger := zap.NewNop()
+	mgr := NewManager(logger)
+
+	err := mgr.TransitionTier(context.Background(), "bucket", "key", TierCold)
 	if err != nil {
-		t.Fatalf("TransitionObject failed: %v", err)
+		t.Fatalf("TransitionTier failed: %v", err)
+	}
+
+	tier, ok := mgr.GetObjectTier("bucket", "key")
+	if !ok || tier != TierCold {
+		t.Errorf("GetObjectTier = %v, %v, want cold, true", tier, ok)
 	}
 }
 
-func TestManager_TransitionObject_SameTier(t *testing.T) {
-	config := &Config{
-		Tiers: []TierConfig{
-			{Name: "STANDARD", Backend: "local"},
+func TestManagerStop(t *testing.T) {
+	logger := zap.NewNop()
+	mgr := NewManager(logger)
+
+	mgr.Stop()
+}
+
+func TestManagerStart(t *testing.T) {
+	logger := zap.NewNop()
+	mgr := NewManager(logger)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go mgr.Start(ctx)
+
+	time.Sleep(10 * time.Millisecond)
+}
+
+func TestManagerStartWithTicker(t *testing.T) {
+	logger := zap.NewNop()
+	mgr := NewManager(logger)
+
+	mgr.CreatePolicy("test-policy", "test-bucket", "")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go mgr.Start(ctx)
+
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+	time.Sleep(10 * time.Millisecond)
+}
+
+func TestManagerTieringWorkerCtxCancel(t *testing.T) {
+	logger := zap.NewNop()
+	mgr := NewManager(logger)
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	go mgr.Start(ctx)
+
+	time.Sleep(10 * time.Millisecond)
+	cancel()
+	time.Sleep(10 * time.Millisecond)
+}
+
+func TestManagerTieringWorkerStopCh(t *testing.T) {
+	logger := zap.NewNop()
+	mgr := NewManager(logger)
+
+	ctx := context.Background()
+
+	go mgr.Start(ctx)
+
+	time.Sleep(10 * time.Millisecond)
+	mgr.Stop()
+	time.Sleep(10 * time.Millisecond)
+}
+
+func TestManagerTieringWorkerTicker(t *testing.T) {
+	logger := zap.NewNop()
+	mgr := NewManager(logger)
+	mgr.SetTickerInterval(10 * time.Millisecond)
+
+	mgr.CreatePolicy("test-policy", "test-bucket", "")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go mgr.Start(ctx)
+
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+	time.Sleep(10 * time.Millisecond)
+}
+
+func TestAnalyzeAccessPatternHighRate(t *testing.T) {
+	logger := zap.NewNop()
+	analyzer := NewAnalyzer(logger)
+
+	objects := []*ObjectInfo{
+		{
+			Bucket:      "bucket",
+			Key:         "key1",
+			Size:        1024,
+			CreatedAt:   time.Now().Add(-1 * time.Hour),
+			AccessCount: 100,
+			Tier:        TierWarm,
 		},
 	}
 
-	mgr, _ := NewManager(config)
-
-	object := &ObjectInfo{
-		Bucket: "test-bucket",
-		Key:    "test-key",
-		Tier:   "STANDARD",
+	recommendations := analyzer.AnalyzeAccessPattern(objects)
+	if len(recommendations) != 1 {
+		t.Errorf("len(recommendations) = %d, want 1", len(recommendations))
 	}
 
-	// Transition to same tier should succeed
-	err := mgr.TransitionObject(object, "STANDARD")
-	if err != nil {
-		t.Errorf("Transition to same tier failed: %v", err)
+	rec, ok := recommendations["bucket/key1"]
+	if !ok {
+		t.Fatal("recommendation for bucket/key1 should exist")
+	}
+
+	if rec.Recommended != TierHot {
+		t.Errorf("Recommended = %v, want hot", rec.Recommended)
+	}
+	if rec.Reason != "High access rate" {
+		t.Errorf("Reason = %v, want 'High access rate'", rec.Reason)
 	}
 }
 
-func TestManager_GetTransitionCandidates(t *testing.T) {
-	config := &Config{
-		Tiers: []TierConfig{
-			{Name: "STANDARD", Backend: "local"},
-			{Name: "GLACIER", Backend: "local"},
+func TestAnalyzeAccessPatternModerateRate(t *testing.T) {
+	logger := zap.NewNop()
+	analyzer := NewAnalyzer(logger)
+
+	objects := []*ObjectInfo{
+		{
+			Bucket:      "bucket",
+			Key:         "key1",
+			Size:        1024,
+			CreatedAt:   time.Now().Add(-10 * time.Hour),
+			AccessCount: 50,
+			Tier:        TierHot,
 		},
 	}
 
-	mgr, _ := NewManager(config)
+	recommendations := analyzer.AnalyzeAccessPattern(objects)
+	rec := recommendations["bucket/key1"]
 
-	candidates, err := mgr.GetTransitionCandidates("test-bucket", "GLACIER", 30*24*time.Hour)
-	if err != nil {
-		t.Fatalf("GetTransitionCandidates failed: %v", err)
-	}
-
-	// May be empty if no objects match criteria
-	if candidates == nil {
-		t.Error("Candidates should not be nil")
+	if rec.Recommended != TierWarm {
+		t.Errorf("Recommended = %v, want warm", rec.Recommended)
 	}
 }
 
-func TestManager_ListTiers(t *testing.T) {
-	config := &Config{
-		Tiers: []TierConfig{
-			{Name: "STANDARD", Backend: "local"},
-			{Name: "GLACIER", Backend: "local"},
+func TestAnalyzeAccessPatternOld(t *testing.T) {
+	logger := zap.NewNop()
+	analyzer := NewAnalyzer(logger)
+
+	objects := []*ObjectInfo{
+		{
+			Bucket:      "bucket",
+			Key:         "key1",
+			Size:        1024,
+			CreatedAt:   time.Now().Add(-100 * 24 * time.Hour),
+			AccessCount: 1,
+			Tier:        TierWarm,
 		},
 	}
 
-	mgr, _ := NewManager(config)
+	recommendations := analyzer.AnalyzeAccessPattern(objects)
+	rec := recommendations["bucket/key1"]
 
-	tiers := mgr.ListTiers()
-	if len(tiers) != 2 {
-		t.Errorf("Tier count = %d, want 2", len(tiers))
+	if rec.Recommended != TierCold {
+		t.Errorf("Recommended = %v, want cold", rec.Recommended)
 	}
 }
 
-func TestManager_GetObjectTier(t *testing.T) {
-	config := &Config{
-		Tiers: []TierConfig{
-			{Name: "STANDARD", Backend: "local"},
+func TestAnalyzeAccessPatternVeryOld(t *testing.T) {
+	logger := zap.NewNop()
+	analyzer := NewAnalyzer(logger)
+
+	objects := []*ObjectInfo{
+		{
+			Bucket:      "bucket",
+			Key:         "key1",
+			Size:        1024,
+			CreatedAt:   time.Now().Add(-200 * 24 * time.Hour),
+			AccessCount: 1,
+			Tier:        TierCold,
 		},
 	}
 
-	mgr, _ := NewManager(config)
+	recommendations := analyzer.AnalyzeAccessPattern(objects)
+	rec := recommendations["bucket/key1"]
 
-	// Should return default tier
-	tier := mgr.GetObjectTier("test-bucket", "test-key")
-	if tier != "STANDARD" {
-		t.Errorf("Object tier = %s, want STANDARD", tier)
+	if rec.Recommended != TierGlacier {
+		t.Errorf("Recommended = %v, want glacier", rec.Recommended)
 	}
 }
 
-func TestManager_CalculateSavings(t *testing.T) {
-	config := &Config{
-		Tiers: []TierConfig{
-			{Name: "STANDARD", CostPerGB: 0.023},
-			{Name: "GLACIER", CostPerGB: 0.004},
+func TestAnalyzeAccessPatternDefault(t *testing.T) {
+	logger := zap.NewNop()
+	analyzer := NewAnalyzer(logger)
+
+	objects := []*ObjectInfo{
+		{
+			Bucket:      "bucket",
+			Key:         "key1",
+			Size:        1024,
+			CreatedAt:   time.Now().Add(-10 * 24 * time.Hour),
+			AccessCount: 1,
+			Tier:        TierHot,
 		},
 	}
 
-	mgr, _ := NewManager(config)
+	recommendations := analyzer.AnalyzeAccessPattern(objects)
+	rec := recommendations["bucket/key1"]
 
-	savings := mgr.CalculateSavings(1024*1024*1024, "STANDARD", "GLACIER")
-
-	if savings <= 0 {
-		t.Error("Savings should be positive when moving to cheaper tier")
+	if rec.Recommended != TierWarm {
+		t.Errorf("Recommended = %v, want warm", rec.Recommended)
+	}
+	if rec.Reason != "Default tier" {
+		t.Errorf("Reason = %v, want 'Default tier'", rec.Reason)
 	}
 }
 
-func TestTierConfig_Validate(t *testing.T) {
-	tests := []struct {
-		name    string
-		config  TierConfig
-		wantErr bool
-	}{
-		{"valid config", TierConfig{Name: "STANDARD", Backend: "local"}, false},
-		{"empty name", TierConfig{Backend: "local"}, true},
-		{"empty backend", TierConfig{Name: "STANDARD"}, true},
+func TestTierConfig(t *testing.T) {
+	cfg := TierConfig{
+		Name:           "test",
+		Tier:           TierHot,
+		MinAge:         24 * time.Hour,
+		MaxSizeGB:      100,
+		CostPerGBMonth: 0.023,
+		Priority:       0,
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := tt.config.Validate()
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
-
-func TestConfig_Validate(t *testing.T) {
-	tests := []struct {
-		name    string
-		config  *Config
-		wantErr bool
-	}{
-		{"valid config", &Config{Tiers: []TierConfig{{Name: "STANDARD", Backend: "local"}}}, false},
-		{"empty tiers", &Config{Tiers: []TierConfig{}}, true},
-		{"nil config", nil, true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := tt.config.Validate()
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
+	if cfg.Name != "test" {
+		t.Errorf("Name = %v, want test", cfg.Name)
 	}
 }
 
 func TestObjectInfo(t *testing.T) {
-	now := time.Now()
-	obj := &ObjectInfo{
-		Bucket:    "test-bucket",
-		Key:       "test-key",
-		Size:      1024,
-		Tier:      "STANDARD",
-		UpdatedAt: now,
+	obj := ObjectInfo{
+		Bucket:       "bucket",
+		Key:          "key",
+		Size:         1024,
+		StorageClass: "STANDARD",
+		LastAccess:   time.Now(),
+		CreatedAt:    time.Now(),
+		AccessCount:  10,
+		Tier:         TierHot,
 	}
 
-	if obj.Bucket != "test-bucket" {
-		t.Errorf("Bucket = %s, want test-bucket", obj.Bucket)
-	}
-
-	if obj.Size != 1024 {
-		t.Errorf("Size = %d, want 1024", obj.Size)
+	if obj.Bucket != "bucket" {
+		t.Errorf("Bucket = %v, want bucket", obj.Bucket)
 	}
 }
 
-func TestManager_Concurrent(t *testing.T) {
-	config := &Config{
-		Tiers: []TierConfig{
-			{Name: "STANDARD", Backend: "local"},
-			{Name: "GLACIER", Backend: "local"},
+func TestTieringPolicy(t *testing.T) {
+	policy := TieringPolicy{
+		ID:          "test-id",
+		Name:        "test-policy",
+		Bucket:      "bucket",
+		Prefix:      "prefix/",
+		TierConfigs: DefaultTierConfigs(),
+		Enabled:     true,
+		CreatedAt:   time.Now(),
+	}
+
+	if policy.ID != "test-id" {
+		t.Errorf("ID = %v, want test-id", policy.ID)
+	}
+}
+
+func TestTierRecommendation(t *testing.T) {
+	rec := TierRecommendation{
+		Object:      &ObjectInfo{Key: "test"},
+		Recommended: TierCold,
+		Current:     TierHot,
+		Reason:      "Old age",
+		SavingsGB:   1.5,
+	}
+
+	if rec.Recommended != TierCold {
+		t.Errorf("Recommended = %v, want cold", rec.Recommended)
+	}
+}
+
+func TestManager_EvaluateTiering(t *testing.T) {
+	logger := zap.NewNop()
+	mgr := NewManager(logger)
+
+	// Add an enabled policy
+	policy := &TieringPolicy{
+		ID:      "test-policy",
+		Bucket:  "test-bucket",
+		Enabled: true,
+		TierConfigs: []TierConfig{
+			{Tier: TierHot, MinAge: time.Hour},
+			{Tier: TierCold, MinAge: 24 * time.Hour},
+		},
+	}
+	mgr.policies["test-policy"] = policy
+
+	// This should not panic
+	mgr.evaluateTiering()
+}
+
+func TestManager_EvaluatePolicy(t *testing.T) {
+	logger := zap.NewNop()
+	mgr := NewManager(logger)
+
+	policy := &TieringPolicy{
+		ID:      "test-policy",
+		Bucket:  "test-bucket",
+		Enabled: true,
+		TierConfigs: []TierConfig{
+			{Tier: TierHot, MinAge: time.Hour},
+			{Tier: TierWarm, MinAge: 7 * 24 * time.Hour},
+			{Tier: TierCold, MinAge: 30 * 24 * time.Hour},
 		},
 	}
 
-	mgr, _ := NewManager(config)
-	done := make(chan bool)
+	// This should not panic
+	mgr.evaluatePolicy(policy)
+}
 
-	for i := 0; i < 10; i++ {
-		go func() {
-			mgr.GetTier("STANDARD")
-			mgr.ListTiers()
-			done <- true
-		}()
-	}
+func TestManager_EvaluateTiering_NoPolicies(t *testing.T) {
+	logger := zap.NewNop()
+	mgr := NewManager(logger)
 
-	for i := 0; i < 10; i++ {
-		<-done
+	// No policies added - should complete without panic
+	mgr.evaluateTiering()
+}
+
+func TestManager_EvaluateTiering_DisabledPolicy(t *testing.T) {
+	logger := zap.NewNop()
+	mgr := NewManager(logger)
+
+	// Add a disabled policy
+	policy := &TieringPolicy{
+		ID:      "disabled-policy",
+		Bucket:  "test-bucket",
+		Enabled: false,
+		TierConfigs: []TierConfig{
+			{Tier: TierHot, MinAge: time.Hour},
+		},
 	}
+	mgr.policies["disabled-policy"] = policy
+
+	// Should skip disabled policies without panic
+	mgr.evaluateTiering()
 }

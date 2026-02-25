@@ -584,6 +584,15 @@ func (s *ObjectService) HeadBucket(ctx context.Context, bucket string) error {
 	return nil
 }
 
+// BucketExists checks if a bucket exists (returns true if it does)
+func (s *ObjectService) BucketExists(ctx context.Context, bucket string) (bool, error) {
+	err := s.HeadBucket(ctx, bucket)
+	if err == nil {
+		return true, nil
+	}
+	return false, nil
+}
+
 // CreateMultipartUpload initiates a multipart upload
 func (s *ObjectService) CreateMultipartUpload(ctx context.Context, bucket, key string, opts PutObjectOptions) (*CreateMultipartUploadResult, error) {
 	// Generate upload ID
@@ -607,6 +616,14 @@ func (s *ObjectService) CreateMultipartUpload(ctx context.Context, bucket, key s
 		Key:      key,
 		Bucket:   bucket,
 	}, nil
+}
+
+// InitiateMultipartUpload is an alias for CreateMultipartUpload
+func (s *ObjectService) InitiateMultipartUpload(ctx context.Context, bucket, key string, opts *PutObjectOptions) (*CreateMultipartUploadResult, error) {
+	if opts == nil {
+		opts = &PutObjectOptions{}
+	}
+	return s.CreateMultipartUpload(ctx, bucket, key, *opts)
 }
 
 // UploadPart uploads a part
@@ -654,6 +671,13 @@ func (s *ObjectService) UploadPart(ctx context.Context, bucket, key, uploadID st
 		PartNumber: partNumber,
 		Size:       size,
 	}, nil
+}
+
+// PutPart is an alias for UploadPart
+func (s *ObjectService) PutPart(ctx context.Context, bucket, key, uploadID string, partNumber int, data []byte) error {
+	reader := bytes.NewReader(data)
+	_, err := s.UploadPart(ctx, bucket, key, uploadID, partNumber, reader)
+	return err
 }
 
 // CompleteMultipartUpload completes a multipart upload
