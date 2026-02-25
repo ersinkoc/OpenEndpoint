@@ -10,226 +10,93 @@ on:
         description: 'Version to release (e.g., v1.0.0)'
         required: true
         type: string
-      prerelease:
-        description: 'Is this a pre-release?'
-        required: false
-        type: boolean
-        default: false
 
 env:
   GO_VERSION: '1.22'
-  REGISTRY: ghcr.io
 
 permissions:
   contents: write
   packages: write
-  id-token: write
-  attestations: write
 
 jobs:
-  # ============================================
-  # Prepare Release Metadata
-  # ============================================
-  metadata:
-    name: Prepare Metadata
+  build:
+    name: Build Release Binaries
     runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.version.outputs.version }}
-      raw_version: ${{ steps.version.outputs.raw_version }}
-      is_prerelease: ${{ steps.version.outputs.is_prerelease }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          fetch-tags: true
-
-      - name: Determine version
-        id: version
-        run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            VERSION="${{ github.event.inputs.version }}"
-            IS_PRERELEASE="${{ github.event.inputs.prerelease }}"
-          else
-            VERSION="${GITHUB_REF#refs/tags/}"
-            if [[ "$VERSION" =~ -(alpha|beta|rc|pre) ]]; then
-              IS_PRERELEASE="true"
-            else
-              IS_PRERELEASE="false"
-            fi
-          fi
-
-          RAW_VERSION="${VERSION#v}"
-
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "raw_version=$RAW_VERSION" >> $GITHUB_OUTPUT
-          echo "is_prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
-
-          echo "Version: $VERSION"
-          echo "Raw Version: $RAW_VERSION"
-          echo "Is Prerelease: $IS_PRERELEASE"
-
-  # ============================================
-  # Build Binaries for All Platforms
-  # ============================================
-  build-binaries:
-    name: Build Binaries
-    runs-on: ubuntu-latest
-    needs: [metadata]
     strategy:
-      fail-fast: false
       matrix:
         include:
-          - platform: linux
-            arch: amd64
-          - platform: linux
-            arch: arm64
-          - platform: darwin
-            arch: amd64
-          - platform: darwin
-            arch: arm64
-          - platform: windows
-            arch: amd64
+          - {os: linux, arch: amd64}
+          - {os: linux, arch: arm64}
+          - {os: darwin, arch: amd64}
+          - {os: darwin, arch: arm64}
+          - {os: windows, arch: amd64}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
-
-      - name: Build binary
+      - name: Build
         env:
-          GOOS: ${{ matrix.platform }}
+          GOOS: ${{ matrix.os }}
           GOARCH: ${{ matrix.arch }}
           CGO_ENABLED: 0
         run: |
-          VERSION="${{ needs.metadata.outputs.version }}"
-          BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          VERSION="${{ github.ref_name }}"
+          [ "$VERSION" = "" ] && VERSION="${{ github.event.inputs.version }}"
 
           EXT=""
-          if [ "${{ matrix.platform }}" == "windows" ]; then
-            EXT=".exe"
-          fi
+          [ "${{ matrix.os }}" = "windows" ] && EXT=".exe"
 
-          OUTPUT="openep-${{ matrix.platform }}-${{ matrix.arch }}${EXT}"
+          go build -ldflags "-s -w -X main.version=$VERSION" -o "openep-${{ matrix.os }}-${{ matrix.arch }}${EXT}" ./cmd/openep
 
-          go build -ldflags "-s -w -X main.version=$VERSION -X main.buildTime=$BUILD_TIME -X main.gitCommit=${GITHUB_SHA::8}" \
-            -o "$OUTPUT" ./cmd/openep
-
-          # Create archive
-          if [ "${{ matrix.platform }}" == "windows" ]; then
-            zip "openep-${VERSION}-${{ matrix.platform }}-${{ matrix.arch }}.zip" "$OUTPUT"
+          if [ "${{ matrix.os }}" = "windows" ]; then
+            zip "openep-${VERSION}-${{ matrix.os }}-${{ matrix.arch }}.zip" "openep-${{ matrix.os }}-${{ matrix.arch }}${EXT}"
           else
-            tar -czf "openep-${VERSION}-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz" "$OUTPUT"
+            tar -czf "openep-${VERSION}-${{ matrix.os }}-${{ matrix.arch }}.tar.gz" "openep-${{ matrix.os }}-${{ matrix.arch }}${EXT}"
           fi
-
-          ls -la
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: binaries-${{ matrix.platform }}-${{ matrix.arch }}
-          path: |
-            openep-*.tar.gz
-            openep-*.zip
-          retention-days: 1
+          name: binaries-${{ matrix.os }}-${{ matrix.arch }}
+          path: openep-*.*
 
-  # ============================================
-  # Build and Push Docker Image
-  # ============================================
   docker:
-    name: Docker Build
+    name: Build Docker Image
     runs-on: ubuntu-latest
-    needs: [metadata]
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ github.repository }}
-          tags: |
-            type=raw,value=${{ needs.metadata.outputs.version }}
-            type=raw,value=latest,enable=${{ needs.metadata.outputs.is_prerelease == 'false' }}
-
-      - name: Build and push
-        id: build
-        uses: docker/build-push-action@v5
+      - uses: docker/build-push-action@v5
         with:
           context: .
           file: ./deploy/docker/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ github.ref_name || github.event.inputs.version }}
+            ghcr.io/${{ github.repository }}:latest
 
-      - name: Generate SBOM
-        uses: anchore/sbom-action@v0
-        with:
-          image: ${{ env.REGISTRY }}/${{ github.repository }}:${{ needs.metadata.outputs.version }}
-          format: spdx-json
-          output-file: sbom.spdx.json
-
-      - name: Upload SBOM
-        uses: actions/upload-artifact@v4
-        with:
-          name: sbom
-          path: sbom.spdx.json
-          retention-days: 30
-
-  # ============================================
-  # Create GitHub Release
-  # ============================================
   release:
     name: Create Release
     runs-on: ubuntu-latest
-    needs: [metadata, build-binaries, docker]
+    needs: [build, docker]
     steps:
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           path: artifacts
           merge-multiple: true
-
-      - name: Generate checksums
+      - name: Create checksums
         run: |
           cd artifacts
           sha256sum * > ../checksums.txt
-          cat ../checksums.txt
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
+      - uses: softprops/action-gh-release@v1
         with:
-          name: OpenEndpoint ${{ needs.metadata.outputs.version }}
-          prerelease: ${{ needs.metadata.outputs.is_prerelease == 'true' }}
           generate_release_notes: true
           files: |
             artifacts/*
             checksums.txt
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Summary
-        run: |
-          echo "## ✅ Release ${{ needs.metadata.outputs.version }} Created"
-          echo ""
-          echo "Docker Image: ${{ env.REGISTRY }}/${{ github.repository }}:${{ needs.metadata.outputs.version }}"
