@@ -18,6 +18,7 @@ import (
 	"github.com/openendpoint/openendpoint/internal/lifecycle"
 	"github.com/openendpoint/openendpoint/internal/metadata/pebble"
 	"github.com/openendpoint/openendpoint/internal/mgmt"
+	"github.com/openendpoint/openendpoint/internal/middleware"
 	"github.com/openendpoint/openendpoint/internal/storage/flatfile"
 	"github.com/openendpoint/openendpoint/internal/telemetry"
 	"github.com/prometheus/client_golang/prometheus"
@@ -238,9 +239,13 @@ func runServer(cfgPath string) error {
 	mux.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
 
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
+
+	// Apply CORS middleware for WebUI access
+	corsHandler := middleware.CORS([]string{"*"})(mux)
+
 	server := &http.Server{
 		Addr:         addr,
-		Handler:      telemetry.LoggingMiddleware(logger)(mux),
+		Handler:      telemetry.LoggingMiddleware(logger)(corsHandler),
 		ReadTimeout:  time.Duration(cfg.Server.ReadTimeout) * time.Second,
 		WriteTimeout: time.Duration(cfg.Server.WriteTimeout) * time.Second,
 		IdleTimeout:  time.Duration(cfg.Server.IdleTimeout) * time.Second,
