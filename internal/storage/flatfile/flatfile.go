@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -177,6 +178,31 @@ func sanitizePathComponent(s string) string {
 	return s
 }
 
+// validateKey validates an object key
+func validateKey(key string) error {
+	if key == "" {
+		return errors.New("object key cannot be empty")
+	}
+	// Check for path traversal attempts
+	if strings.Contains(key, "..") {
+		return errors.New("object key cannot contain '..' (path traversal)")
+	}
+	// Key cannot start with / or \ (absolute paths)
+	if key[0] == '/' || key[0] == '\\' {
+		return errors.New("object key cannot start with '/' or '\\'")
+	}
+	// Normalize and verify no path traversal after normalization
+	cleaned := filepath.Clean(key)
+	if strings.HasPrefix(cleaned, "..") {
+		return errors.New("invalid object key after normalization")
+	}
+	// Check for null bytes
+	if strings.Contains(key, "\x00") {
+		return errors.New("object key cannot contain null bytes")
+	}
+	return nil
+}
+
 // escapePath makes a key safe for filesystem
 func escapePath(key string) string {
 	// First sanitize for path traversal
@@ -196,6 +222,11 @@ func unescapePath(path string) string {
 }
 
 func (f *FlatFile) Put(ctx context.Context, bucket, key string, data io.Reader, size int64, opts storage.PutOptions) error {
+	// Validate object key
+	if err := validateKey(key); err != nil {
+		return err
+	}
+
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
@@ -273,6 +304,11 @@ func (f *FlatFile) Put(ctx context.Context, bucket, key string, data io.Reader, 
 }
 
 func (f *FlatFile) Get(ctx context.Context, bucket, key string, opts storage.GetOptions) (io.ReadCloser, error) {
+	// Validate object key
+	if err := validateKey(key); err != nil {
+		return nil, err
+	}
+
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 
@@ -323,6 +359,11 @@ type readerWithSize struct {
 }
 
 func (f *FlatFile) Delete(ctx context.Context, bucket, key string) error {
+	// Validate object key
+	if err := validateKey(key); err != nil {
+		return err
+	}
+
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
@@ -364,6 +405,11 @@ func (f *FlatFile) cleanupEmptyDirs(dir string) {
 }
 
 func (f *FlatFile) Head(ctx context.Context, bucket, key string) (*storage.ObjectInfo, error) {
+	// Validate object key
+	if err := validateKey(key); err != nil {
+		return nil, err
+	}
+
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 

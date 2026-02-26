@@ -66,10 +66,18 @@ func isBodyTooLarge(data []byte) bool {
 // sanitizeHeaderValue removes potentially dangerous characters from header values
 // to prevent HTTP header injection attacks
 func sanitizeHeaderValue(value string) string {
-	// Remove newlines and carriage returns that could enable header injection
-	result := strings.ReplaceAll(value, "\r", "")
-	result = strings.ReplaceAll(result, "\n", "")
-	return result
+	// Remove newlines, carriage returns, and other control characters
+	var result strings.Builder
+	result.Grow(len(value))
+	for _, r := range value {
+		// Allow printable characters and common whitespace (space, tab)
+		// Remove all control characters (ASCII 0-31 and 127)
+		if r < 32 || r == 127 {
+			continue
+		}
+		result.WriteRune(r)
+	}
+	return result.String()
 }
 
 // ServeHTTP handles S3 API requests

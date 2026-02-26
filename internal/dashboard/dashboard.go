@@ -7,7 +7,21 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"os"
+	"time"
+
+	"github.com/openendpoint/openendpoint/internal/version"
 )
+
+// HTTP client with timeout and connection pooling for backend communication
+var backendClient = &http.Client{
+	Timeout: 10 * time.Second,
+	Transport: &http.Transport{
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 100,
+		IdleConnTimeout:    90 * time.Second,
+	},
+}
 
 // HTML templates
 //
@@ -53,7 +67,7 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 		Version string
 	}{
 		Title:   "OpenEndpoint Dashboard",
-		Version: "1.0.0",
+		Version: version.Version,
 	}
 
 	tmpl.Execute(w, data)
@@ -71,7 +85,7 @@ func metricsHandler(w http.ResponseWriter, r *http.Request) {
 		Version string
 	}{
 		Title:   "OpenEndpoint Metrics",
-		Version: "1.0.0",
+		Version: version.Version,
 	}
 
 	tmpl.Execute(w, data)
@@ -123,7 +137,7 @@ func clusterHandler(clusterInfo interface {
 			Version string
 		}{
 			Title:   "OpenEndpoint Cluster",
-			Version: "1.0.0",
+			Version: version.Version,
 		}
 
 		tmpl.Execute(w, data)
@@ -142,7 +156,7 @@ func s3BrowserHandler(w http.ResponseWriter, r *http.Request) {
 		Version string
 	}{
 		Title:   "OpenEndpoint S3 Browser",
-		Version: "1.0.0",
+		Version: version.Version,
 	}
 
 	tmpl.Execute(w, data)
@@ -154,7 +168,11 @@ func s3BrowserHandler(w http.ResponseWriter, r *http.Request) {
 func getBackendURL(r *http.Request) string {
 	host := r.Host
 	if host == "" {
-		host = "localhost:9000"
+		// Use environment variable or empty string instead of hardcoded localhost
+		host = os.Getenv("DEFAULT_BACKEND_HOST")
+		if host == "" {
+			return "" // Don't fallback to insecure default
+		}
 	}
 	return "http://" + host
 }
@@ -164,7 +182,14 @@ func apiStatusHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
 	backend := getBackendURL(r)
-	resp, err := http.Get(backend + "/_mgmt/")
+	if backend == "" {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": "backend URL not configured",
+		})
+		return
+	}
+	resp, err := backendClient.Get(backend + "/_mgmt/")
 	if err != nil {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"status":  "error",
@@ -183,7 +208,7 @@ func apiStatusHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	status["timestamp"] = map[string]interface{}{
-		"seconds": 1728000000,
+		"seconds": time.Now().Unix(),
 		"nanos":   0,
 	}
 
@@ -195,7 +220,13 @@ func apiMetricsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
 	backend := getBackendURL(r)
-	resp, err := http.Get(backend + "/_mgmt/metrics/json")
+	if backend == "" {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": "backend URL not configured",
+		})
+		return
+	}
+	resp, err := backendClient.Get(backend + "/_mgmt/metrics/json")
 	if err != nil {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"error": err.Error(),
@@ -218,7 +249,14 @@ func apiBucketsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
 	backend := getBackendURL(r)
-	resp, err := http.Get(backend + "/_mgmt/buckets")
+	if backend == "" {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"buckets": []interface{}{},
+			"error":   "backend URL not configured",
+		})
+		return
+	}
+	resp, err := backendClient.Get(backend + "/_mgmt/buckets")
 	if err != nil {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"buckets": []interface{}{},
@@ -239,7 +277,7 @@ func apiBucketsHandler(w http.ResponseWriter, r *http.Request) {
 				bucketName := bucket["name"].(string)
 
 				// Get object count
-				objResp, err := http.Get(backend + fmt.Sprintf("/_mgmt/buckets/%s/objects", bucketName))
+				objResp, err := backendClient.Get(backend + fmt.Sprintf("/_mgmt/buckets/%s/objects", bucketName))
 				if err == nil {
 					var objResult map[string]interface{}
 					json.NewDecoder(objResp.Body).Decode(&objResult)
