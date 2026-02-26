@@ -5,12 +5,18 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"math/rand"
 	"net/http"
 	"strings"
 	"time"
+
+	"go.uber.org/zap"
 )
+
+var logger, _ = zap.NewProduction()
+
+// Version can be set via ldflags at build time
+var Version = "1.0.0"
 
 // gzipResponseWriter wraps an http.ResponseWriter with gzip compression
 type gzipResponseWriter struct {
@@ -66,13 +72,12 @@ func Logger(next http.Handler) http.Handler {
 
 		duration := time.Since(start)
 
-		log.Printf(
-			"%s %s %d %s %s",
-			r.Method,
-			r.URL.Path,
-			wrapped.statusCode,
-			duration,
-			r.RemoteAddr,
+		logger.Info("request completed",
+			zap.String("method", r.Method),
+			zap.String("path", r.URL.Path),
+			zap.Int("status", wrapped.statusCode),
+			zap.String("duration", duration.String()),
+			zap.String("remote_addr", r.RemoteAddr),
 		)
 	})
 }
@@ -81,8 +86,8 @@ func Logger(next http.Handler) http.Handler {
 func Recoverer(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
-			if err := recover(); err != nil {
-				log.Printf("Panic recovered: %v", err)
+			if r := recover(); r != nil {
+				logger.Error("panic recovered", zap.Any("panic", r))
 				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			}
 		}()
@@ -140,7 +145,7 @@ func Headers(next http.Handler) http.Handler {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("X-XSS-Protection", "1; mode=block")
-		w.Header().Set("Server", "OpenEndpoint/0.1.0")
+		w.Header().Set("Server", "OpenEndpoint/"+Version)
 
 		next.ServeHTTP(w, r)
 	})
@@ -188,7 +193,10 @@ func Timeout(timeout time.Duration) func(http.Handler) http.Handler {
 			case <-done:
 				return
 			case <-time.After(timeout):
-				log.Printf("Request timed out: %s %s", r.Method, r.URL.Path)
+				logger.Warn("request timed out",
+					zap.String("method", r.Method),
+					zap.String("path", r.URL.Path),
+				)
 				http.Error(w, "Request Timeout", http.StatusRequestTimeout)
 			}
 		})

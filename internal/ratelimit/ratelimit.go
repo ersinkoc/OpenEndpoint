@@ -6,6 +6,12 @@ import (
 	"time"
 )
 
+// Default rate limit values
+const (
+	DefaultRate  = 1000
+	DefaultBurst = 500
+)
+
 // Limiter implements token bucket rate limiting
 type Limiter struct {
 	tokens    float64
@@ -157,26 +163,16 @@ func (bl *BucketLimiter) Middleware(next http.Handler) http.Handler {
 
 // getLimiter gets or creates a limiter for an IP
 func (bl *BucketLimiter) getLimiter(clientIP string) *Limiter {
-	bl.mu.RLock()
-	entry, ok := bl.ipLimits[clientIP]
-	bl.mu.RUnlock()
+	bl.mu.Lock()
+	defer bl.mu.Unlock()
 
+	entry, ok := bl.ipLimits[clientIP]
 	if ok {
 		entry.lastAccess = time.Now()
 		return entry.limiter
 	}
 
 	// Create new limiter for this IP
-	bl.mu.Lock()
-	defer bl.mu.Unlock()
-
-	// Double-check after acquiring write lock
-	entry, ok = bl.ipLimits[clientIP]
-	if ok {
-		entry.lastAccess = time.Now()
-		return entry.limiter
-	}
-
 	entry = &limiterEntry{
 		limiter:    NewLimiter(bl.limiter.maxTokens, bl.limiter.refillRate),
 		lastAccess: time.Now(),
@@ -222,7 +218,15 @@ func splitIPs(s string) []string {
 }
 
 // GlobalLimiter is a global rate limiter
-var GlobalLimiter = NewBucketLimiter(1000, 500) // 1000 req/s default
+var GlobalLimiter = NewBucketLimiter(DefaultRate, DefaultBurst)
+
+// ConfigureGlobalLimiter allows configuring the global rate limiter
+// Should be called during initialization with values from config
+func ConfigureGlobalLimiter(rate, burst int) {
+	if rate > 0 && burst > 0 {
+		GlobalLimiter = NewBucketLimiter(float64(rate), float64(burst))
+	}
+}
 
 // RateLimitMiddleware returns a global rate limiting middleware
 func RateLimitMiddleware(next http.Handler) http.Handler {

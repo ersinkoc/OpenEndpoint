@@ -132,7 +132,11 @@ func (b *BBoltStore) CreateBucket(ctx context.Context, bucket string) error {
 			Name:         bucket,
 			CreationDate: nowUnix(),
 		}
-		return buckets.Put([]byte(bucket), mustEncode(meta))
+		data, err := encode(meta)
+		if err != nil {
+			return err
+		}
+		return buckets.Put([]byte(bucket), data)
 	})
 }
 
@@ -176,7 +180,11 @@ func (b *BBoltStore) PutObject(ctx context.Context, bucket, key string, meta *me
 	return b.db.Update(func(tx *bolt.Tx) error {
 		objects := tx.Bucket([]byte("objects"))
 		objKey := bucket + "/" + key
-		return objects.Put([]byte(objKey), mustEncode(meta))
+		data, err := encode(meta)
+		if err != nil {
+			return err
+		}
+		return objects.Put([]byte(objKey), data)
 	})
 }
 
@@ -934,7 +942,16 @@ func nowUnix() int64 {
 	return time.Now().Unix()
 }
 
-// mustEncode panics on encode error
+// encode marshals data to JSON, returns error on failure
+func encode(v interface{}) ([]byte, error) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode: %w", err)
+	}
+	return data, nil
+}
+
+// mustEncode panics on encode error - kept for backward compatibility
 func mustEncode(v interface{}) []byte {
 	data, err := json.Marshal(v)
 	if err != nil {

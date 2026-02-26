@@ -21,6 +21,14 @@ import (
 
 var cfgPath string
 
+// httpClient is used for CLI commands with timeout
+var httpClient = &http.Client{
+	Timeout: 10 * time.Second,
+}
+
+// Version variable - can be set via ldflags
+var version = "v1.0.0"
+
 // RootCmd represents the base command when called without any subcommands
 var RootCmd = &cobra.Command{
 	Use:   "openep",
@@ -39,7 +47,8 @@ var ServerCmd = &cobra.Command{
 	Short: "Start OpenEndpoint server",
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("Starting OpenEndpoint server...")
-		fmt.Println("Use 'openep serve' to start the server")
+		// This will be handled by the actual server command
+		// Run with: openep serve or openep server
 	},
 }
 
@@ -48,8 +57,7 @@ var VersionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print version information",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("OpenEndpoint v0.1.0")
-		fmt.Println("Build: dev")
+		fmt.Printf("OpenEndpoint %s\n", version)
 	},
 }
 
@@ -308,7 +316,7 @@ var AdminInfoCmd = &cobra.Command{
 			log.Fatal(err)
 		}
 		fmt.Println("OpenEndpoint Server Information:")
-		fmt.Printf("  Version:     0.1.0\n")
+		fmt.Printf("  Version:     %s\n", version)
 		fmt.Printf("  API Port:    %d\n", cfg.Server.Port)
 		fmt.Printf("  Data Dir:    %s\n", cfg.Storage.DataDir)
 		fmt.Printf("  Backend:     %s\n", cfg.Storage.StorageBackend)
@@ -730,7 +738,11 @@ func getConfigValue(cfg *config.Config, key string) interface{} {
 func getServerURL() string {
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
-		return "http://localhost:9000"
+		// Use environment variable or empty string as fallback
+		if url := os.Getenv("OPENEP_SERVER_URL"); url != "" {
+			return url
+		}
+		return ""
 	}
 	return fmt.Sprintf("http://%s:%d", cfg.Server.Host, cfg.Server.Port)
 }
@@ -742,8 +754,11 @@ type BucketInfo struct {
 }
 
 func runMonitorStatus() (map[string]interface{}, error) {
-	url := getServerURL() + "/_mgmt/"
-	resp, err := http.Get(url)
+	url := getServerURL()
+	if url == "" {
+		return nil, fmt.Errorf("server URL not configured. Set OPENEP_SERVER_URL environment variable or provide config file")
+	}
+	resp, err := httpClient.Get(url + "/_mgmt/")
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to server: %w", err)
 	}
@@ -757,8 +772,11 @@ func runMonitorStatus() (map[string]interface{}, error) {
 }
 
 func runMonitorHealth() (bool, error) {
-	url := getServerURL() + "/_mgmt/health"
-	resp, err := http.Get(url)
+	url := getServerURL()
+	if url == "" {
+		return false, fmt.Errorf("server URL not configured. Set OPENEP_SERVER_URL environment variable or provide config file")
+	}
+	resp, err := httpClient.Get(url + "/_mgmt/health")
 	if err != nil {
 		return false, err
 	}
@@ -767,8 +785,11 @@ func runMonitorHealth() (bool, error) {
 }
 
 func runMonitorReady() (bool, error) {
-	url := getServerURL() + "/_mgmt/ready"
-	resp, err := http.Get(url)
+	url := getServerURL()
+	if url == "" {
+		return false, fmt.Errorf("server URL not configured. Set OPENEP_SERVER_URL environment variable or provide config file")
+	}
+	resp, err := httpClient.Get(url + "/_mgmt/ready")
 	if err != nil {
 		return false, err
 	}
@@ -777,8 +798,11 @@ func runMonitorReady() (bool, error) {
 }
 
 func runMonitorCluster() (map[string]interface{}, error) {
-	url := getServerURL() + "/_mgmt/cluster"
-	resp, err := http.Get(url)
+	url := getServerURL()
+	if url == "" {
+		return nil, fmt.Errorf("server URL not configured. Set OPENEP_SERVER_URL environment variable or provide config file")
+	}
+	resp, err := httpClient.Get(url + "/_mgmt/cluster")
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to server: %w", err)
 	}
@@ -792,8 +816,11 @@ func runMonitorCluster() (map[string]interface{}, error) {
 }
 
 func runMonitorMetrics() (string, error) {
-	url := getServerURL() + "/metrics"
-	resp, err := http.Get(url)
+	url := getServerURL()
+	if url == "" {
+		return "", fmt.Errorf("server URL not configured. Set OPENEP_SERVER_URL environment variable or provide config file")
+	}
+	resp, err := httpClient.Get(url + "/metrics")
 	if err != nil {
 		return "", fmt.Errorf("failed to connect to server: %w", err)
 	}
@@ -807,8 +834,11 @@ func runMonitorMetrics() (string, error) {
 }
 
 func runMonitorBuckets() ([]BucketInfo, error) {
-	url := getServerURL() + "/_mgmt/buckets"
-	resp, err := http.Get(url)
+	url := getServerURL()
+	if url == "" {
+		return nil, fmt.Errorf("server URL not configured. Set OPENEP_SERVER_URL environment variable or provide config file")
+	}
+	resp, err := httpClient.Get(url + "/_mgmt/buckets")
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to server: %w", err)
 	}
@@ -826,8 +856,8 @@ func runMonitorBuckets() ([]BucketInfo, error) {
 	// Get object counts for each bucket
 	buckets := make([]BucketInfo, len(result.Buckets))
 	for i, b := range result.Buckets {
-		objURL := fmt.Sprintf("%s/_mgmt/buckets/%s/objects", getServerURL(), b.Name)
-		objResp, err := http.Get(objURL)
+		objURL := fmt.Sprintf("%s/_mgmt/buckets/%s/objects", url, b.Name)
+		objResp, err := httpClient.Get(objURL)
 		if err != nil {
 			buckets[i] = BucketInfo{Name: b.Name, ObjectCount: 0}
 			continue
@@ -847,6 +877,14 @@ func runMonitorWatch(interval int) {
 	if interval <= 0 {
 		interval = 2
 	}
+
+	// Check server URL first
+	serverURL := getServerURL()
+	if serverURL == "" {
+		fmt.Println("Error: server URL not configured. Set OPENEP_SERVER_URL environment variable or provide config file")
+		return
+	}
+
 	ticker := time.NewTicker(time.Duration(interval) * time.Second)
 	defer ticker.Stop()
 
@@ -865,8 +903,8 @@ func runMonitorWatch(interval int) {
 		}
 
 		// Get bucket count
-		url := getServerURL() + "/_mgmt/buckets"
-		resp, _ := http.Get(url)
+		url := serverURL + "/_mgmt/buckets"
+		resp, _ := httpClient.Get(url)
 		bucketCount := 0
 		if resp != nil {
 			var result struct {

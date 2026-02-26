@@ -8,20 +8,21 @@ import (
 )
 
 type Config struct {
-	Server    ServerConfig    `mapstructure:"server"`
-	Storage   StorageConfig   `mapstructure:"storage"`
-	Auth      AuthConfig     `mapstructure:"auth"`
-	Cluster   ClusterConfig  `mapstructure:"cluster"`
+	Server     ServerConfig     `mapstructure:"server"`
+	Storage    StorageConfig    `mapstructure:"storage"`
+	Auth       AuthConfig      `mapstructure:"auth"`
+	Cluster    ClusterConfig   `mapstructure:"cluster"`
 	Federation FederationConfig `mapstructure:"federation"`
-	CDN      CDNConfig      `mapstructure:"cdn"`
-	Tenant   TenantConfig   `mapstructure:"tenant"`
-	Tiering  TieringConfig  `mapstructure:"tiering"`
-	Dedup    DedupConfig    `mapstructure:"deduplication"`
+	CDN       CDNConfig       `mapstructure:"cdn"`
+	Tenant    TenantConfig    `mapstructure:"tenant"`
+	Tiering   TieringConfig   `mapstructure:"tiering"`
+	Dedup     DedupConfig     `mapstructure:"deduplication"`
 	Analytics AnalyticsConfig `mapstructure:"analytics"`
-	Backup   BackupConfig   `mapstructure:"backup"`
-	Metrics  MetricsConfig  `mapstructure:"metrics"`
-	TLS      TLSConfig      `mapstructure:"tls"`
-	LogLevel string         `mapstructure:"log_level"`
+	Backup    BackupConfig    `mapstructure:"backup"`
+	Metrics   MetricsConfig   `mapstructure:"metrics"`
+	TLS       TLSConfig       `mapstructure:"tls"`
+	RateLimit RateLimitConfig `mapstructure:"rate_limit"`
+	LogLevel  string          `mapstructure:"log_level"`
 }
 
 type ServerConfig struct {
@@ -65,6 +66,12 @@ type TLSConfig struct {
 	Enabled    bool   `mapstructure:"enabled"`
 	CertFile   string `mapstructure:"cert_file"`
 	KeyFile    string `mapstructure:"key_file"`
+}
+
+type RateLimitConfig struct {
+	Enabled bool `mapstructure:"enabled"`
+	Rate    int  `mapstructure:"rate"`    // requests per second
+	Burst   int  `mapstructure:"burst"`   // max burst size
 }
 
 type LoggingConfig struct {

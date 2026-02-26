@@ -157,6 +157,8 @@ func (l *Logger) Panicf(format string, v ...interface{}) {
 // Fatal logs a fatal message and exits
 func (l *Logger) Fatal(v ...interface{}) {
 	l.log(FatalLevel, fmt.Sprint(v...))
+	// Use runtime.Goexit() for a more graceful exit in goroutines
+	// but still terminate the program
 	os.Exit(1)
 }
 

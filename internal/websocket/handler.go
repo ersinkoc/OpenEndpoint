@@ -2,12 +2,14 @@ package websocket
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
 	"sync"
 
 	"github.com/gorilla/websocket"
+	"go.uber.org/zap"
 )
+
+var logger, _ = zap.NewProduction()
 
 // Message represents a WebSocket message
 type Message struct {
@@ -50,7 +52,7 @@ func (h *Hub) Run() {
 			h.mu.Lock()
 			h.clients[client] = true
 			h.mu.Unlock()
-			log.Printf("Client connected: %s", client.ID)
+			logger.Info("client connected", zap.String("client_id", client.ID))
 
 		case client := <-h.unregister:
 			h.mu.Lock()
@@ -59,7 +61,7 @@ func (h *Hub) Run() {
 				close(client.send)
 			}
 			h.mu.Unlock()
-			log.Printf("Client disconnected: %s", client.ID)
+			logger.Info("client disconnected", zap.String("client_id", client.ID))
 
 		case message := <-h.broadcast:
 			h.mu.RLock()
@@ -84,7 +86,7 @@ func (h *Hub) Broadcast(msgType string, payload interface{}) {
 		Payload: json.RawMessage(payload.([]byte)),
 	})
 	if err != nil {
-		log.Printf("Failed to marshal message: %v", err)
+		logger.Error("failed to marshal message", zap.Error(err))
 		return
 	}
 	h.broadcast <- data
@@ -97,7 +99,7 @@ func (h *Hub) BroadcastJSON(msgType string, payload interface{}) {
 		"payload": payload,
 	})
 	if err != nil {
-		log.Printf("Failed to marshal message: %v", err)
+		logger.Error("failed to marshal message", zap.Error(err))
 		return
 	}
 	h.broadcast <- data
@@ -107,7 +109,7 @@ func (h *Hub) BroadcastJSON(msgType string, payload interface{}) {
 func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("WebSocket upgrade error: %v", err)
+		logger.Error("websocket upgrade error", zap.Error(err))
 		return
 	}
 
@@ -138,7 +140,7 @@ func (c *Client) readPump() {
 		_, message, err := c.conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("WebSocket error: %v", err)
+				logger.Error("websocket error", zap.Error(err))
 			}
 			break
 		}
@@ -169,7 +171,7 @@ func (c *Client) writePump() {
 func (c *Client) handleMessage(data []byte) {
 	var msg Message
 	if err := json.Unmarshal(data, &msg); err != nil {
-		log.Printf("Failed to unmarshal message: %v", err)
+		logger.Error("failed to unmarshal message", zap.Error(err))
 		return
 	}
 
@@ -178,10 +180,14 @@ func (c *Client) handleMessage(data []byte) {
 		c.send <- []byte(`{"type":"pong"}`)
 	case "subscribe":
 		// Handle bucket/object subscription
-		log.Printf("Client %s subscribed to: %s", c.ID, string(msg.Payload))
+		logger.Info("client subscribed",
+			zap.String("client_id", c.ID),
+			zap.ByteString("payload", msg.Payload))
 	case "unsubscribe":
 		// Handle unsubscription
-		log.Printf("Client %s unsubscribed from: %s", c.ID, string(msg.Payload))
+		logger.Info("client unsubscribed",
+			zap.String("client_id", c.ID),
+			zap.ByteString("payload", msg.Payload))
 	}
 }
 

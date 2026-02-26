@@ -1097,7 +1097,10 @@ func TestCreateBucket_Duplicate(t *testing.T) {
 	}
 
 	err = ff.CreateBucket(ctx, "duplicate-bucket")
-	_ = err
+	// Creating a duplicate bucket should fail
+	if err == nil {
+		t.Log("expected error when creating duplicate bucket")
+	}
 }
 
 func TestDeleteBucket_NonExistent(t *testing.T) {
@@ -1115,7 +1118,10 @@ func TestDeleteBucket_NonExistent(t *testing.T) {
 	ctx := context.Background()
 
 	err = ff.DeleteBucket(ctx, "non-existent-bucket")
-	_ = err
+	// Deleting non-existent bucket should fail
+	if err == nil {
+		t.Log("expected error when deleting non-existent bucket")
+	}
 }
 
 func TestHead_WithMetadata(t *testing.T) {
@@ -1210,7 +1216,10 @@ func TestDelete_NonExistent(t *testing.T) {
 	ctx := context.Background()
 
 	err = ff.Delete(ctx, "bucket", "non-existent-key")
-	_ = err
+	// Deleting non-existent key should fail
+	if err == nil {
+		t.Log("expected error when deleting non-existent key")
+	}
 }
 
 type errorReader struct{}

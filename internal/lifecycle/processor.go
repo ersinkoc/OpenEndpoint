@@ -2,13 +2,15 @@ package lifecycle
 
 import (
 	"context"
-	"log"
 	"sync"
 	"time"
 
 	"github.com/openendpoint/openendpoint/internal/engine"
 	"github.com/openendpoint/openendpoint/internal/metadata"
+	"go.uber.org/zap"
 )
+
+var logger, _ = zap.NewProduction()
 
 // Processor handles lifecycle rule processing
 type Processor struct {
@@ -31,14 +33,14 @@ func NewProcessor(eng *engine.ObjectService, interval time.Duration) *Processor 
 func (p *Processor) Start() {
 	p.wg.Add(1)
 	go p.run()
-	log.Printf("Lifecycle processor started with interval: %v", p.interval)
+	logger.Info("lifecycle processor started", zap.Duration("interval", p.interval))
 }
 
 // Stop stops the lifecycle processor
 func (p *Processor) Stop() {
 	close(p.stopCh)
 	p.wg.Wait()
-	log.Println("Lifecycle processor stopped")
+	logger.Info("lifecycle processor stopped")
 }
 
 // Run runs the lifecycle processor loop
@@ -69,7 +71,7 @@ func (p *Processor) processBuckets() {
 
 	buckets, err := p.engine.ListBuckets(ctx)
 	if err != nil {
-		log.Printf("Failed to list buckets: %v", err)
+		logger.Error("failed to list buckets", zap.Error(err))
 		return
 	}
 
@@ -136,7 +138,7 @@ func (p *Processor) processExpiration(ctx context.Context, bucket string, rule *
 
 	result, err := p.engine.ListObjects(ctx, bucket, opts)
 	if err != nil {
-		log.Printf("Failed to list objects for expiration: %v", err)
+		logger.Error("failed to list objects for expiration", zap.Error(err))
 		return
 	}
 
@@ -144,9 +146,13 @@ func (p *Processor) processExpiration(ctx context.Context, bucket string, rule *
 		if obj.LastModified < cutoffTime {
 			err := p.engine.DeleteObject(ctx, bucket, obj.Key, engine.DeleteObjectOptions{})
 			if err != nil {
-				log.Printf("Failed to delete expired object %s: %v", obj.Key, err)
+				logger.Error("failed to delete expired object",
+					zap.String("key", obj.Key),
+					zap.Error(err))
 			} else {
-				log.Printf("Deleted expired object: %s/%s", bucket, obj.Key)
+				logger.Info("deleted expired object",
+					zap.String("bucket", bucket),
+					zap.String("key", obj.Key))
 			}
 		}
 	}
@@ -165,7 +171,7 @@ func (p *Processor) processTransitions(ctx context.Context, bucket string, rule 
 		MaxKeys: 1000,
 	})
 	if err != nil {
-		log.Printf("Failed to list objects for transition: %v", err)
+		logger.Error("failed to list objects for transition", zap.Error(err))
 		return
 	}
 
@@ -198,13 +204,18 @@ func (p *Processor) processTransitions(ctx context.Context, bucket string, rule 
 				// Perform the transition by copying to itself with new storage class
 				_, err := p.engine.CopyObject(ctx, bucket, obj.Key, bucket, obj.Key)
 				if err != nil {
-					log.Printf("Failed to transition object %s/%s to %s: %v",
-						bucket, obj.Key, transition.StorageClass, err)
+					logger.Error("failed to transition object",
+						zap.String("bucket", bucket),
+						zap.String("key", obj.Key),
+						zap.String("storage_class", transition.StorageClass),
+						zap.Error(err))
 					continue
 				}
 
-				log.Printf("Transitioned object %s/%s to storage class %s",
-					bucket, obj.Key, transition.StorageClass)
+				logger.Info("transitioned object to storage class",
+					zap.String("bucket", bucket),
+					zap.String("key", obj.Key),
+					zap.String("storage_class", transition.StorageClass))
 			}
 		}
 	}
@@ -219,8 +230,9 @@ func (p *Processor) processNoncurrentVersionExpiration(ctx context.Context, buck
 
 	// Note: Full version expiration would require tracking all versions
 	// This is a simplified implementation that logs the action
-	log.Printf("Noncurrent version expiration for bucket %s: %d days",
-		bucket, noncurrentExp.NoncurrentDays)
+	logger.Info("noncurrent version expiration",
+		zap.String("bucket", bucket),
+		zap.Int("days", noncurrentExp.NoncurrentDays))
 
 	// In a full implementation, we would:
 	// 1. List all object versions in the bucket

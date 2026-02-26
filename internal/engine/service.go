@@ -42,6 +42,9 @@ func New(storage storage.StorageBackend, metadata metadata.Store, logger *zap.Su
 
 // Close closes the ObjectService and releases resources
 func (s *ObjectService) Close() error {
+	if s.locker != nil {
+		s.locker.Stop()
+	}
 	if s.storage != nil {
 		s.storage.Close()
 	}
@@ -122,6 +125,7 @@ func (s *ObjectService) PutObject(ctx context.Context, bucket, key string, data 
 	// Save metadata
 	if err := s.metadata.PutObject(ctx, bucket, key, objMeta); err != nil {
 		s.logger.Error("failed to save metadata", zap.Error(err))
+		return nil, fmt.Errorf("failed to save object metadata: %w", err)
 	}
 
 	// Update telemetry metrics
@@ -1388,14 +1392,53 @@ func validateBucketName(name string) error {
 
 // Locker provides per-object locking
 type Locker struct {
-	mu   sync.Mutex
-	locks map[string]*sync.RWMutex
+	mu              sync.RWMutex
+	locks           map[string]*sync.RWMutex
+	maxLocks        int
+	cleanupInterval time.Duration
+	stopCleanup     chan struct{}
 }
 
 // NewLocker creates a new locker
 func NewLocker() *Locker {
-	return &Locker{
-		locks: make(map[string]*sync.RWMutex),
+	l := &Locker{
+		locks:           make(map[string]*sync.RWMutex),
+		maxLocks:        10000, // Maximum number of locks to keep
+		cleanupInterval: 5 * time.Minute,
+		stopCleanup:     make(chan struct{}),
+	}
+	go l.cleanup()
+	return l
+}
+
+// Stop stops the cleanup goroutine
+func (l *Locker) Stop() {
+	close(l.stopCleanup)
+}
+
+// cleanup periodically removes excess locks to prevent memory leak
+func (l *Locker) cleanup() {
+	ticker := time.NewTicker(l.cleanupInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			l.mu.Lock()
+			if len(l.locks) > l.maxLocks {
+				// Remove oldest locks when exceeding limit
+				toRemove := len(l.locks) - l.maxLocks
+				for key := range l.locks {
+					if toRemove <= 0 {
+						break
+					}
+					delete(l.locks, key)
+					toRemove--
+				}
+			}
+			l.mu.Unlock()
+		case <-l.stopCleanup:
+			return
+		}
 	}
 }
 
@@ -1415,13 +1458,13 @@ func (l *Locker) Lock(bucket, key string) func() {
 
 // RLock acquires a read lock
 func (l *Locker) RLock(bucket, key string) func() {
-	l.mu.Lock()
+	l.mu.RLock()
 	keyStr := bucket + "/" + key
 	if l.locks[keyStr] == nil {
 		l.locks[keyStr] = &sync.RWMutex{}
 	}
 	mu := l.locks[keyStr]
-	l.mu.Unlock()
+	l.mu.RUnlock()
 
 	mu.RLock()
 	return func() { mu.RUnlock() }

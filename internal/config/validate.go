@@ -13,12 +13,17 @@ import (
 func (c *Config) Validate() error {
 	// Validate server config
 	if c.Server.Port < 1 || c.Server.Port > 65535 {
-		return fmt.Errorf("invalid server port: %d", c.Server.Port)
+		return fmt.Errorf("port must be between 1 and 65535, got %d", c.Server.Port)
 	}
 
 	// Validate storage config
 	if c.Storage.DataDir == "" {
 		return fmt.Errorf("storage data directory is required")
+	}
+
+	// Check if data directory exists first
+	if _, err := os.Stat(c.Storage.DataDir); os.IsNotExist(err) {
+		return fmt.Errorf("storage data directory does not exist: %s", c.Storage.DataDir)
 	}
 
 	// Check if data directory is writable

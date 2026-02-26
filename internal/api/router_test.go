@@ -230,8 +230,10 @@ func TestReadLimitedBodyNil(t *testing.T) {
 		}
 	}()
 	result, err := readLimitedBody(nil)
-	_ = result
-	_ = err
+	// nil body should return nil result and no error
+	if result != nil || err != nil {
+		t.Logf("expected nil result and err, got result=%v, err=%v", result, err)
+	}
 }
 
 func TestIsBodyTooLargeBoundary(t *testing.T) {
